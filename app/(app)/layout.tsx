@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { signOut } from './actions'
 import { DesktopNav, MobileNav } from '@/components/nav'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 /**
  * Shell for every authenticated page.
@@ -33,13 +34,15 @@ export default async function AppLayout({
             </span>
           </Link>
 
-          <DesktopNav signOut={signOut} />
-
-          <form action={signOut} className="sm:hidden">
-            <button type="submit" className="text-sm text-neutral-500">
-              Sign out
-            </button>
-          </form>
+          <div className="flex items-center gap-3">
+            <DesktopNav signOut={signOut} />
+            <ThemeToggle />
+            <form action={signOut} className="sm:hidden">
+              <button type="submit" className="text-sm text-neutral-500">
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 
