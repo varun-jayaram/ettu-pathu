@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getPeriod, todayIso, type Period } from '@/lib/period'
 
 /**
  * Shared reads. Every one of these relies on RLS to scope rows to the current
@@ -127,16 +128,66 @@ export function budgetState(spentCents: number, budgetCents: number): BudgetStat
   return 'normal'
 }
 
-/** First and last day of the current month, as YYYY-MM-DD. */
-export function currentMonthRange(): { from: string; to: string } {
-  const now = new Date()
-  const first = new Date(now.getFullYear(), now.getMonth(), 1)
-  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-  const iso = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-      d.getDate(),
-    ).padStart(2, '0')}`
-  return { from: iso(first), to: iso(last) }
+export type Income = {
+  id: string
+  wallet_id: string
+  amount: string
+  received_on: string
+  source: string
+  note: string | null
+  wallets: { id: string; name: string }
+}
+
+/** Household settings as a plain map. Shared and non-sensitive. */
+export async function getSettings(): Promise<Record<string, string>> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('app_settings').select('key, value')
+  return Object.fromEntries((data ?? []).map((row) => [row.key, row.value]))
+}
+
+/**
+ * Income is SHARED — both people see every euro coming in. Only spending is
+ * private. There is no wallet filter here for that reason. See PROJECT.md.
+ */
+export async function getIncome(
+  options: { from?: string; to?: string; limit?: number } = {},
+): Promise<Income[]> {
+  const supabase = await createClient()
+  let query = supabase
+    .from('income')
+    .select('id, wallet_id, amount, received_on, source, note, wallets!inner(id, name)')
+    .order('received_on', { ascending: false })
+    .limit(options.limit ?? 100)
+
+  if (options.from) query = query.gte('received_on', options.from)
+  if (options.to) query = query.lte('received_on', options.to)
+
+  const { data } = await query
+  return (data ?? []) as unknown as Income[]
+}
+
+/**
+ * The current pay-cycle period: anchor day from settings, snapped to real
+ * salary dates where they have been logged.
+ */
+export async function getCurrentPeriod(): Promise<Period> {
+  const supabase = await createClient()
+
+  const [settings, salaries] = await Promise.all([
+    getSettings(),
+    supabase
+      .from('income')
+      .select('received_on')
+      .eq('source', 'salary')
+      .order('received_on', { ascending: false })
+      .limit(24),
+  ])
+
+  return getPeriod(todayIso(), {
+    anchorDay: Number(settings.pay_anchor_day ?? 26),
+    windowDays: Number(settings.pay_anchor_window_days ?? 7),
+    salaryDates: (salaries.data ?? []).map((row) => row.received_on as string),
+  })
 }
 
 /**

@@ -135,9 +135,71 @@ not a failure** — a Misc that grows is the signal to add a category.
 
 ---
 
+## The household model: income shared, spending private
+
+This is the asymmetry the whole app is built around, and it was decided
+deliberately:
+
+| | |
+|---|---|
+| **Income** | **Shared** — both see every euro coming in |
+| **Personal wallets** | **Private** — neither sees the other's spending |
+| **Joint wallet** | **Shared** — what you spend together |
+
+Money is pooled; discretion is not. `income` therefore has `using (true)`
+policies like the category taxonomy, while `expenses` stays gated on
+`is_wallet_member()`.
+
+`income.wallet_id` records *which account the money landed in* — attribution,
+not a privacy boundary. Either person may log either salary.
+
+**A design that was built and then deleted:** the first version modelled income
+as wallet-private, mirroring expenses. That forced a separate shared
+`pay_anchors` table holding only dates, so both phones could agree on the cycle
+boundary without leaking the amount. Once income became shared that table was
+pure overhead, and `0008` drops it. If income is ever made private again, that
+problem comes back — the boundary must be derivable by both users, or the same
+cycle shows different totals on each phone.
+
+---
+
+## Pay-cycle periods, not calendar months
+
+The household is paid **between the 25th and 27th**. On calendar months the
+last ~5 days of every month were funded by the *next* salary, and the budget
+reset five days after payday.
+
+A period runs from an **anchor day** (default the 26th, configurable) to the
+day before the next one, and is **named for the month it ends in** — 26 Aug–25
+Sep is "September". When a salary is logged within a window (default 7 days) of
+a boundary, the boundary **snaps to the real payday**; otherwise the anchor
+stands.
+
+**Why not a literal rolling 30 days**, which is what was asked for first:
+12 × 30 = 360, so periods drift backwards ~5 days a year, eventually putting
+two period starts in one calendar month and none in another. "What did I spend
+in September" stops having an answer. The anchor keeps exactly one period per
+month, so month-over-month comparison survives.
+
+**Two traps, both covered by `tests/period.test.mjs`:**
+
+- **Clamp short months.** An anchor of the 31st must become the 28th in
+  February, not roll into March.
+- **Snap before choosing the cycle, never after.** An earlier version picked
+  the cycle from the unsnapped anchor and snapped afterwards, which could move
+  a boundary out from under today and return a period that did not contain it
+  (salary on the 24th, anchor the 26th, viewed on the 25th → "26 Jul–23 Aug").
+  Boundaries are now all computed with snapping applied, then the cycle
+  containing today is selected.
+
+Recurring rules stay **calendar**-based: rent is due on the 1st whether or not
+that falls mid-cycle. Only the reporting and budget period changed.
+
+---
+
 ## Budgets
 
-**Per wallet, at group level, calendar month, no rollover.** Roughly four numbers
+**Per wallet, at group level, one pay cycle, no rollover.** Roughly four numbers
 per wallet — few enough that they will actually be kept current.
 
 > **The rule that keeps it coherent:** a group budget defines what **"over"**

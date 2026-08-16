@@ -1,8 +1,8 @@
 import { setBudget } from '../actions'
 import {
-  currentMonthRange,
   getBudgets,
   getCategoryGroups,
+  getCurrentPeriod,
   getExpenses,
   getWallets,
 } from '@/lib/queries'
@@ -10,7 +10,11 @@ import { formatEur, sumCents } from '@/lib/money'
 import { BudgetBar } from '@/components/budget-bar'
 
 /**
- * Budgets: per wallet, at group level, calendar month, no rollover.
+ * Budgets: per wallet, at group level, one pay cycle, no rollover.
+ *
+ * The period is the pay cycle (anchor day, snapped to real paydays), not the
+ * calendar month — the household is paid around the 26th, so a calendar budget
+ * reset five days after payday. See lib/period.ts.
  *
  * Only `variable` groups appear. Committed is contractual — a budget on rent is
  * theatre — and `transfer` is excluded from spend entirely, so neither can be
@@ -22,7 +26,8 @@ export default async function BudgetsPage({
   searchParams: Promise<{ wallet?: string }>
 }) {
   const params = await searchParams
-  const { from, to } = currentMonthRange()
+  const period = await getCurrentPeriod()
+  const { from, to } = period
 
   const [wallets, groups, budgets, expenses] = await Promise.all([
     getWallets(),
@@ -34,18 +39,13 @@ export default async function BudgetsPage({
   const selected = wallets.find((w) => w.id === params.wallet) ?? wallets[0]
   const variableGroups = groups.filter((g) => g.kind === 'variable')
 
-  const monthName = new Date(`${from}T00:00:00`).toLocaleDateString('en-GB', {
-    month: 'long',
-    year: 'numeric',
-  })
-
   const walletExpenses = expenses.filter((e) => e.wallets.id === selected?.id)
 
   return (
     <>
       <h1 className="text-xl font-semibold tracking-tight">Budgets</h1>
       <p className="mt-1 text-sm text-neutral-500">
-        {monthName} · resets on the 1st, nothing carries over
+        {period.label} cycle · {period.daysLeft} days left, nothing carries over
       </p>
 
       <div className="mt-4 flex flex-wrap gap-2">

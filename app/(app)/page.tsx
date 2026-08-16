@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import {
-  currentMonthRange,
   getBudgets,
   getCategoryGroups,
+  getCurrentPeriod,
   getExpenses,
+  getIncome,
   getWallets,
   materializeRecurring,
 } from '@/lib/queries'
@@ -20,12 +21,15 @@ export default async function HomePage() {
   // are correct at the moment you look at them. Idempotent.
   await materializeRecurring()
 
-  const { from, to } = currentMonthRange()
-  const [wallets, expenses, budgets, groups] = await Promise.all([
+  const period = await getCurrentPeriod()
+  const { from, to } = period
+
+  const [wallets, expenses, budgets, groups, income] = await Promise.all([
     getWallets(),
     getExpenses({ from, to, limit: 500 }),
     getBudgets(),
     getCategoryGroups(),
+    getIncome({ from, to }),
   ])
 
   const spend = expenses.filter((e) => isSpend(e.categories.category_groups.kind))
@@ -36,14 +40,53 @@ export default async function HomePage() {
     spend.filter((e) => e.categories.category_groups.kind === 'variable'),
   )
 
-  const monthName = new Date(`${from}T00:00:00`).toLocaleDateString('en-GB', {
-    month: 'long',
-    year: 'numeric',
-  })
+  const incomeCents = sumCents(income)
+  const spentCents = committedCents + variableCents
+  const leftCents = incomeCents - spentCents
+
+  const shortDate = (value: string) =>
+    new Date(`${value}T00:00:00Z`).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'UTC',
+    })
 
   return (
     <>
-      <h1 className="text-xl font-semibold tracking-tight">{monthName}</h1>
+      <h1 className="text-xl font-semibold tracking-tight">{period.label}</h1>
+      <p className="mt-1 text-sm text-neutral-500">
+        {shortDate(from)} – {shortDate(to)} · {period.daysLeft} days left
+        {period.snapped && ' · from your actual payday'}
+      </p>
+
+      {/* Income eight, expenses ten — the whole point of the app, so it leads. */}
+      {incomeCents > 0 && (
+        <div className="mt-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+          <div className="flex items-baseline justify-between">
+            <span className="text-sm text-neutral-500">In</span>
+            <span className="tabular-nums text-sm">{formatEur(incomeCents)}</span>
+          </div>
+          <div className="mt-1 flex items-baseline justify-between">
+            <span className="text-sm text-neutral-500">Out</span>
+            <span className="tabular-nums text-sm">−{formatEur(spentCents)}</span>
+          </div>
+          <div className="mt-2 flex items-baseline justify-between border-t border-neutral-200 pt-2 dark:border-neutral-800">
+            <span className="text-sm font-medium">Left</span>
+            <span
+              className={`tabular-nums text-lg font-semibold ${
+                leftCents < 0 ? 'text-red-600' : ''
+              }`}
+            >
+              {formatEur(leftCents)}
+            </span>
+          </div>
+          {leftCents < 0 && (
+            <p className="mt-2 text-xs text-red-600">
+              செலவு பத்தணா — spending more than came in this cycle.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">

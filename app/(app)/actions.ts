@@ -134,6 +134,79 @@ export async function setBudget(formData: FormData): Promise<void> {
   revalidatePath('/')
 }
 
+/**
+ * Logs household income. Shared, so either person may record either salary —
+ * this is pooled money, unlike spending.
+ *
+ * A `salary` row also moves the pay-cycle boundary if it lands near the anchor
+ * day, which is why the source matters and is not just a label.
+ */
+export async function addIncome(
+  _previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const walletId = String(formData.get('wallet_id') ?? '')
+  const rawAmount = String(formData.get('amount') ?? '').replace(',', '.')
+  const receivedOn = String(formData.get('received_on') ?? '')
+  const source = String(formData.get('source') ?? 'salary')
+  const note = String(formData.get('note') ?? '').trim()
+
+  if (!walletId) return { error: 'Pick a wallet.' }
+
+  const amount = Number(rawAmount)
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { error: 'Enter an amount greater than zero.' }
+  }
+  if (!receivedOn) return { error: 'Pick a date.' }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const { error } = await supabase.from('income').insert({
+    wallet_id: walletId,
+    amount: amount.toFixed(2),
+    received_on: receivedOn,
+    source,
+    note: note || null,
+    created_by: user?.id ?? null,
+  })
+
+  if (error) return { error: `Could not save: ${error.message}` }
+
+  revalidatePath('/')
+  revalidatePath('/income')
+  redirect('/income?added=1')
+}
+
+export async function deleteIncome(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
+
+  const supabase = await createClient()
+  await supabase.from('income').delete().eq('id', id)
+
+  revalidatePath('/')
+  revalidatePath('/income')
+}
+
+/** The pay-cycle anchor day, 1–31. Clamped per month (31 -> 28 in February). */
+export async function setAnchorDay(formData: FormData): Promise<void> {
+  const day = Number(String(formData.get('anchor_day') ?? ''))
+  if (!Number.isInteger(day) || day < 1 || day > 31) return
+
+  const supabase = await createClient()
+  await supabase
+    .from('app_settings')
+    .update({ value: String(day), updated_at: new Date().toISOString() })
+    .eq('key', 'pay_anchor_day')
+
+  revalidatePath('/')
+  revalidatePath('/income')
+  revalidatePath('/budgets')
+}
+
 export async function signOut(): Promise<void> {
   const supabase = await createClient()
   await supabase.auth.signOut()
