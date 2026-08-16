@@ -47,6 +47,9 @@ export default async function AppLayout({
             <Link href="/recurring" className="hover:underline">
               Recurring
             </Link>
+            <Link href="/reports" className="hover:underline">
+              Reports
+            </Link>
             <Link
               href="/add"
               className="rounded-lg bg-neutral-900 px-3 py-1.5 font-medium text-white dark:bg-white dark:text-neutral-900"
@@ -88,8 +91,8 @@ export default async function AppLayout({
           <Link href="/budgets" className="rounded-lg py-2.5 text-center text-sm">
             Budget
           </Link>
-          <Link href="/income" className="rounded-lg py-2.5 text-center text-sm">
-            Income
+          <Link href="/reports" className="rounded-lg py-2.5 text-center text-sm">
+            Reports
           </Link>
         </div>
       </nav>

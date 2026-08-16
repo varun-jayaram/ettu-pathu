@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { getPeriod, todayIso, type Period } from '@/lib/period'
+import { addDays, getPeriod, todayIso, type Period } from '@/lib/period'
 
 /**
  * Shared reads. Every one of these relies on RLS to scope rows to the current
@@ -223,6 +223,43 @@ export async function getCurrentPeriod(): Promise<Period> {
     windowDays: Number(settings.pay_anchor_window_days ?? 7),
     salaryDates: (salaries.data ?? []).map((row) => row.received_on as string),
   })
+}
+
+/**
+ * The last `count` pay cycles, oldest first, including the current one.
+ *
+ * Walks backwards a day at a time from each period's start, so it follows the
+ * same snapping rules as the live period — a cycle that moved because of a real
+ * payday stays moved in the history.
+ */
+export async function getRecentPeriods(count = 6): Promise<Period[]> {
+  const supabase = await createClient()
+  const [settings, salaries] = await Promise.all([
+    getSettings(),
+    supabase
+      .from('income')
+      .select('received_on')
+      .eq('source', 'salary')
+      .order('received_on', { ascending: false })
+      .limit(60),
+  ])
+
+  const options = {
+    anchorDay: Number(settings.pay_anchor_day ?? 26),
+    windowDays: Number(settings.pay_anchor_window_days ?? 7),
+    salaryDates: (salaries.data ?? []).map((row) => row.received_on as string),
+  }
+
+  const periods: Period[] = []
+  let cursor = todayIso()
+
+  for (let i = 0; i < count; i++) {
+    const period = getPeriod(cursor, options)
+    periods.unshift(period)
+    cursor = addDays(period.from, -1)
+  }
+
+  return periods
 }
 
 /**
