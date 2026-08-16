@@ -3,6 +3,7 @@
 import { useActionState } from 'react'
 import { addRecurringRule, type FormState } from '@/app/(app)/actions'
 import type { CategoryGroup, Wallet } from '@/lib/queries'
+import { DateField } from '@/components/date-field'
 
 /**
  * Create a recurring rule. This is how the Committed floor fills itself in
@@ -96,17 +97,9 @@ export function RecurringForm({
         ))}
       </select>
 
-      <label className="mt-4 block text-sm font-medium" htmlFor="start_date">
-        Starting from
-      </label>
-      <input
-        id="start_date"
-        name="start_date"
-        type="date"
-        required
-        defaultValue={today}
-        className={field}
-      />
+      <div className="mt-4">
+        <DateField name="start_date" today={today} label="Starting from" />
+      </div>
       <p className="mt-1 text-xs text-neutral-500">
         Back-date this and every occurrence since will be filled in at once.
       </p>

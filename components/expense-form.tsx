@@ -3,6 +3,7 @@
 import { useActionState } from 'react'
 import { addExpense, type FormState } from '@/app/(app)/actions'
 import type { CategoryGroup, Wallet } from '@/lib/queries'
+import { DateField } from '@/components/date-field'
 
 /**
  * Quick-add — the primary daily action, so it is built for one-handed phone
@@ -90,17 +91,9 @@ export function ExpenseForm({
         ))}
       </select>
 
-      <label className="mt-4 block text-sm font-medium" htmlFor="spent_on">
-        Date
-      </label>
-      <input
-        id="spent_on"
-        name="spent_on"
-        type="date"
-        required
-        defaultValue={today}
-        className={field}
-      />
+      <div className="mt-4">
+        <DateField name="spent_on" today={today} />
+      </div>
 
       <label className="mt-4 block text-sm font-medium" htmlFor="note">
         Note <span className="font-normal text-neutral-500">(optional)</span>

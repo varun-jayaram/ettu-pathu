@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react'
 import { addIncome, type FormState } from '@/app/(app)/actions'
+import { DateField } from '@/components/date-field'
 
 const SOURCES = [
   ['salary', 'Salary'],
@@ -56,17 +57,9 @@ export function IncomeForm({ today }: { today: string }) {
         Only <strong>Salary</strong> moves the pay-cycle start date.
       </p>
 
-      <label className="mt-4 block text-sm font-medium" htmlFor="received_on">
-        Received on
-      </label>
-      <input
-        id="received_on"
-        name="received_on"
-        type="date"
-        required
-        defaultValue={today}
-        className={field}
-      />
+      <div className="mt-4">
+        <DateField name="received_on" today={today} label="Received on" />
+      </div>
 
       <label className="mt-4 block text-sm font-medium" htmlFor="income-note">
         Note <span className="font-normal text-neutral-500">(optional)</span>
