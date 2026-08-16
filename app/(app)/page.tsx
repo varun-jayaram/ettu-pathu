@@ -1,11 +1,14 @@
 import Link from 'next/link'
 import {
   currentMonthRange,
+  getBudgets,
+  getCategoryGroups,
   getExpenses,
   getWallets,
   materializeRecurring,
 } from '@/lib/queries'
 import { formatEur, isSpend, sumCents, toCents } from '@/lib/money'
+import { BudgetBar } from '@/components/budget-bar'
 
 /**
  * This month at a glance. The full dashboard — budget bars, group breakdown,
@@ -18,9 +21,11 @@ export default async function HomePage() {
   await materializeRecurring()
 
   const { from, to } = currentMonthRange()
-  const [wallets, expenses] = await Promise.all([
+  const [wallets, expenses, budgets, groups] = await Promise.all([
     getWallets(),
     getExpenses({ from, to, limit: 500 }),
+    getBudgets(),
+    getCategoryGroups(),
   ])
 
   const spend = expenses.filter((e) => isSpend(e.categories.category_groups.kind))
@@ -56,6 +61,61 @@ export default async function HomePage() {
           <p className="mt-1 text-xs text-neutral-500">the spend you can move</p>
         </div>
       </div>
+
+      {/* Group budgets across every wallet the user belongs to. Only group
+          budgets appear here — category sub-limits live on /budgets, since
+          they warn rather than define "over". */}
+      {(() => {
+        const bars = budgets
+          .filter((b) => b.scope === 'group')
+          .map((budget) => {
+            const group = groups.find((g) => g.id === budget.group_id)
+            const wallet = wallets.find((w) => w.id === budget.wallet_id)
+            if (!group || !wallet) return null
+            const spentCents = sumCents(
+              spend.filter(
+                (e) =>
+                  e.wallets.id === wallet.id &&
+                  e.categories.category_groups.id === group.id,
+              ),
+            )
+            return {
+              key: budget.id,
+              label: `${group.name} · ${wallet.name}`,
+              spentCents,
+              budgetCents: Math.round(Number(budget.amount) * 100),
+            }
+          })
+          .filter((bar) => bar !== null)
+
+        if (bars.length === 0) {
+          return (
+            <p className="mt-8 rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500 dark:border-neutral-700">
+              No budgets set yet.{' '}
+              <Link href="/budgets" className="underline">
+                Set one
+              </Link>{' '}
+              — a budget on dining out changes behaviour; one on rent is theatre.
+            </p>
+          )
+        }
+
+        return (
+          <>
+            <h2 className="mt-8 text-sm font-medium">Budgets</h2>
+            <div className="mt-3 space-y-4">
+              {bars.map((bar) => (
+                <BudgetBar
+                  key={bar.key}
+                  label={bar.label}
+                  spentCents={bar.spentCents}
+                  budgetCents={bar.budgetCents}
+                />
+              ))}
+            </div>
+          </>
+        )
+      })()}
 
       <h2 className="mt-8 text-sm font-medium">By wallet</h2>
       <ul className="mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">

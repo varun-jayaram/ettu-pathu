@@ -94,6 +94,39 @@ export async function getExpenses(options: {
   return (data ?? []) as unknown as ExpenseRow[]
 }
 
+export type Budget = {
+  id: string
+  wallet_id: string
+  scope: 'group' | 'category'
+  group_id: string | null
+  category_id: string | null
+  amount: string
+}
+
+/** Every budget in the user's wallets. RLS keeps the other person's out. */
+export async function getBudgets(): Promise<Budget[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('budgets')
+    .select('id, wallet_id, scope, group_id, category_id, amount')
+  return (data ?? []) as Budget[]
+}
+
+/**
+ * Budget alert states. A group budget defines what "over" means; a category
+ * sub-limit only warns. See PROJECT.md § Budgets — sub-limits are deliberately
+ * not required to sum to the group budget.
+ */
+export type BudgetState = 'normal' | 'approaching' | 'over'
+
+export function budgetState(spentCents: number, budgetCents: number): BudgetState {
+  if (budgetCents <= 0) return 'normal'
+  const ratio = spentCents / budgetCents
+  if (ratio > 1) return 'over'
+  if (ratio >= 0.8) return 'approaching'
+  return 'normal'
+}
+
 /** First and last day of the current month, as YYYY-MM-DD. */
 export function currentMonthRange(): { from: string; to: string } {
   const now = new Date()

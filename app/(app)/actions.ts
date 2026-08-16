@@ -75,6 +75,65 @@ export async function deleteExpense(formData: FormData): Promise<void> {
   revalidatePath('/expenses')
 }
 
+/**
+ * Sets or clears a budget. An empty amount removes it, which is how you turn a
+ * budget off — there is no separate delete button to hunt for.
+ *
+ * Upserts by hand rather than using .upsert(): the uniqueness is enforced by
+ * PARTIAL unique indexes (…where group_id is not null), which PostgREST's
+ * on_conflict cannot target.
+ */
+export async function setBudget(formData: FormData): Promise<void> {
+  const walletId = String(formData.get('wallet_id') ?? '')
+  const groupId = String(formData.get('group_id') ?? '')
+  const categoryId = String(formData.get('category_id') ?? '')
+  const raw = String(formData.get('amount') ?? '').replace(',', '.').trim()
+
+  if (!walletId || (!groupId && !categoryId)) return
+
+  const scope = groupId ? 'group' : 'category'
+  const column = groupId ? 'group_id' : 'category_id'
+  const targetId = groupId || categoryId
+
+  const supabase = await createClient()
+
+  const { data: existing } = await supabase
+    .from('budgets')
+    .select('id')
+    .eq('wallet_id', walletId)
+    .eq(column, targetId)
+    .maybeSingle()
+
+  // Blank clears the budget.
+  if (raw === '') {
+    if (existing) await supabase.from('budgets').delete().eq('id', existing.id)
+    revalidatePath('/budgets')
+    revalidatePath('/')
+    return
+  }
+
+  const amount = Number(raw)
+  if (!Number.isFinite(amount) || amount <= 0) return
+
+  if (existing) {
+    await supabase
+      .from('budgets')
+      .update({ amount: amount.toFixed(2) })
+      .eq('id', existing.id)
+  } else {
+    await supabase.from('budgets').insert({
+      wallet_id: walletId,
+      scope,
+      group_id: groupId || null,
+      category_id: categoryId || null,
+      amount: amount.toFixed(2),
+    })
+  }
+
+  revalidatePath('/budgets')
+  revalidatePath('/')
+}
+
 export async function signOut(): Promise<void> {
   const supabase = await createClient()
   await supabase.auth.signOut()

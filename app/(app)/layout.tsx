@@ -38,6 +38,9 @@ export default async function AppLayout({
             <Link href="/expenses" className="hover:underline">
               Expenses
             </Link>
+            <Link href="/budgets" className="hover:underline">
+              Budgets
+            </Link>
             <Link
               href="/add"
               className="rounded-lg bg-neutral-900 px-3 py-1.5 font-medium text-white dark:bg-white dark:text-neutral-900"
@@ -63,7 +66,7 @@ export default async function AppLayout({
 
       {/* Bottom bar, phones only. */}
       <nav className="fixed inset-x-0 bottom-0 border-t border-neutral-200 bg-white/95 backdrop-blur sm:hidden dark:border-neutral-800 dark:bg-neutral-950/95">
-        <div className="mx-auto grid max-w-2xl grid-cols-3 items-center gap-1 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="mx-auto grid max-w-2xl grid-cols-4 items-center gap-1 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           <Link href="/" className="rounded-lg py-2.5 text-center text-sm">
             Home
           </Link>
@@ -74,7 +77,10 @@ export default async function AppLayout({
             Add
           </Link>
           <Link href="/expenses" className="rounded-lg py-2.5 text-center text-sm">
-            Expenses
+            Log
+          </Link>
+          <Link href="/budgets" className="rounded-lg py-2.5 text-center text-sm">
+            Budgets
           </Link>
         </div>
       </nav>
