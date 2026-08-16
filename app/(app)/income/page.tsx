@@ -1,5 +1,5 @@
 import { deleteIncome, setAnchorDay } from '../actions'
-import { getCurrentPeriod, getIncome, getSettings, getWallets } from '@/lib/queries'
+import { getCurrentPeriod, getIncome, getSettings } from '@/lib/queries'
 import { formatEur, sumCents } from '@/lib/money'
 import { todayIso } from '@/lib/period'
 import { IncomeForm } from '@/components/income-form'
@@ -18,8 +18,7 @@ export default async function IncomePage({
   const params = await searchParams
   const period = await getCurrentPeriod()
 
-  const [wallets, settings, periodIncome, recentIncome] = await Promise.all([
-    getWallets(),
+  const [settings, periodIncome, recentIncome] = await Promise.all([
     getSettings(),
     getIncome({ from: period.from, to: period.to }),
     getIncome({ limit: 30 }),
@@ -52,7 +51,7 @@ export default async function IncomePage({
       <section className="mt-8">
         <h2 className="text-sm font-medium">Log income</h2>
         <div className="mt-3">
-          <IncomeForm wallets={wallets} today={todayIso()} />
+          <IncomeForm today={todayIso()} />
         </div>
       </section>
 
@@ -77,7 +76,7 @@ export default async function IncomePage({
                     )}
                   </p>
                   <p className="truncate text-xs text-neutral-500">
-                    {formatDate(row.received_on)} · {row.wallets.name}
+                    {formatDate(row.received_on)}
                     {row.note ? ` · ${row.note}` : ''}
                   </p>
                 </div>
@@ -88,7 +87,7 @@ export default async function IncomePage({
                   action={deleteIncome}
                   id={row.id}
                   title={row.source}
-                  detail={`${formatDate(row.received_on)} · ${row.wallets.name}${
+                  detail={`${formatDate(row.received_on)}${
                     row.note ? ` · ${row.note}` : ''
                   }`}
                   amount={formatEur(Math.round(Number(row.amount) * 100))}

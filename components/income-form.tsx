@@ -2,7 +2,6 @@
 
 import { useActionState } from 'react'
 import { addIncome, type FormState } from '@/app/(app)/actions'
-import type { Wallet } from '@/lib/queries'
 
 const SOURCES = [
   ['salary', 'Salary'],
@@ -14,13 +13,7 @@ const SOURCES = [
   ['other', 'Other'],
 ] as const
 
-export function IncomeForm({
-  wallets,
-  today,
-}: {
-  wallets: Wallet[]
-  today: string
-}) {
+export function IncomeForm({ today }: { today: string }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     addIncome,
     null,
@@ -63,20 +56,6 @@ export function IncomeForm({
         Only <strong>Salary</strong> moves the pay-cycle start date.
       </p>
 
-      <label className="mt-4 block text-sm font-medium" htmlFor="income-wallet">
-        Into which account
-      </label>
-      <select id="income-wallet" name="wallet_id" required className={field} defaultValue="">
-        <option value="" disabled>
-          Choose…
-        </option>
-        {wallets.map((wallet) => (
-          <option key={wallet.id} value={wallet.id}>
-            {wallet.name}
-          </option>
-        ))}
-      </select>
-
       <label className="mt-4 block text-sm font-medium" htmlFor="received_on">
         Received on
       </label>
@@ -105,7 +84,7 @@ export function IncomeForm({
       </button>
 
       <p className="mt-3 text-center text-xs text-neutral-500">
-        Income is shared — you both see it.
+        Income always goes to the Joint wallet — you both see it.
       </p>
     </form>
   )

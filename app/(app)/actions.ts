@@ -145,13 +145,10 @@ export async function addIncome(
   _previous: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const walletId = String(formData.get('wallet_id') ?? '')
   const rawAmount = String(formData.get('amount') ?? '').replace(',', '.')
   const receivedOn = String(formData.get('received_on') ?? '')
   const source = String(formData.get('source') ?? 'salary')
   const note = String(formData.get('note') ?? '').trim()
-
-  if (!walletId) return { error: 'Pick a wallet.' }
 
   const amount = Number(rawAmount)
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -164,8 +161,20 @@ export async function addIncome(
     data: { user },
   } = await supabase.auth.getUser()
 
+  // Income always lands in the JOINT wallet. It is pooled household money, so
+  // asking which wallet was a choice that could only be answered wrongly —
+  // and a salary sitting in a personal wallet would misattribute shared money.
+  // Resolved server-side so the client cannot put it anywhere else.
+  const { data: joint } = await supabase
+    .from('wallets')
+    .select('id')
+    .eq('kind', 'joint')
+    .maybeSingle()
+
+  if (!joint) return { error: 'No joint wallet found.' }
+
   const { error } = await supabase.from('income').insert({
-    wallet_id: walletId,
+    wallet_id: joint.id,
     amount: amount.toFixed(2),
     received_on: receivedOn,
     source,
