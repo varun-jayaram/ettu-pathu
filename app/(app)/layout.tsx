@@ -24,9 +24,12 @@ export default async function AppLayout({
   return (
     <div className="min-h-dvh pb-24 lg:pb-0">
       <header className="border-b border-neutral-200 dark:border-neutral-800">
-        <div className="mx-auto flex max-w-2xl items-center justify-between gap-4 p-4">
+        {/* Wider than the content column on purpose: the header carries the full
+            app name plus the whole nav, and boxing it to max-w-2xl truncated the
+            title to "Varavu Ettu Selavu Pat...". Reading stays at max-w-2xl below. */}
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-6 p-4">
           <Link href="/" className="min-w-0 flex-1">
-            <span className="block truncate font-semibold tracking-tight">
+            <span className="block truncate font-semibold tracking-tight lg:whitespace-normal">
               Varavu Ettu Selavu Pathu
             </span>
             <span className="block truncate text-xs text-neutral-500">
