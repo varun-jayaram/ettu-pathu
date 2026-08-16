@@ -1,7 +1,6 @@
 import { deleteIncome, setAnchorDay } from '../actions'
 import { getCurrentPeriod, getIncome, getSettings } from '@/lib/queries'
 import { formatEur, sumCents } from '@/lib/money'
-import { todayIso } from '@/lib/period'
 import { IncomeForm } from '@/components/income-form'
 import { ConfirmDelete } from '@/components/confirm-delete'
 
@@ -51,7 +50,7 @@ export default async function IncomePage({
       <section className="mt-8">
         <h2 className="text-sm font-medium">Log income</h2>
         <div className="mt-3">
-          <IncomeForm today={todayIso()} />
+          <IncomeForm />
         </div>
       </section>
 
