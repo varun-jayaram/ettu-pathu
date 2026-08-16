@@ -128,6 +128,41 @@ export function budgetState(spentCents: number, budgetCents: number): BudgetStat
   return 'normal'
 }
 
+export type RecurringRule = {
+  id: string
+  wallet_id: string
+  amount: string
+  note: string | null
+  day_of_month: number
+  start_date: string
+  end_date: string | null
+  active: boolean
+  last_generated_on: string | null
+  wallets: { id: string; name: string }
+  categories: {
+    id: string
+    name: string
+    icon: string | null
+    category_groups: { id: string; name: string; kind: string }
+  }
+}
+
+/** Recurring rules in the user's wallets. RLS scopes them. */
+export async function getRecurringRules(): Promise<RecurringRule[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('recurring_rules')
+    .select(
+      `id, wallet_id, amount, note, day_of_month, start_date, end_date, active,
+       last_generated_on,
+       wallets!inner(id, name),
+       categories!inner(id, name, icon, category_groups!inner(id, name, kind))`,
+    )
+    .order('active', { ascending: false })
+    .order('day_of_month')
+  return (data ?? []) as unknown as RecurringRule[]
+}
+
 export type Income = {
   id: string
   wallet_id: string

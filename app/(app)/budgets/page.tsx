@@ -1,9 +1,11 @@
+import Link from 'next/link'
 import { setBudget } from '../actions'
 import {
   getBudgets,
   getCategoryGroups,
   getCurrentPeriod,
   getExpenses,
+  getRecurringRules,
   getWallets,
 } from '@/lib/queries'
 import { formatEur, sumCents } from '@/lib/money'
@@ -29,11 +31,12 @@ export default async function BudgetsPage({
   const period = await getCurrentPeriod()
   const { from, to } = period
 
-  const [wallets, groups, budgets, expenses] = await Promise.all([
+  const [wallets, groups, budgets, expenses, rules] = await Promise.all([
     getWallets(),
     getCategoryGroups(),
     getBudgets(),
     getExpenses({ from, to, limit: 1000 }),
+    getRecurringRules(),
   ])
 
   const selected = wallets.find((w) => w.id === params.wallet) ?? wallets[0]
@@ -64,7 +67,77 @@ export default async function BudgetsPage({
         ))}
       </div>
 
-      <div className="mt-6 space-y-8">
+      {/* Answer "where is rent?" here, where the question is actually asked —
+          it used to be a footnote at the bottom that nobody reads. */}
+      {(() => {
+        const committedGroups = groups.filter((g) => g.kind === 'committed')
+        const committedActual = sumCents(
+          walletExpenses.filter((e) =>
+            committedGroups.some((g) => g.id === e.categories.category_groups.id),
+          ),
+        )
+        const committedExpected = sumCents(
+          rules.filter(
+            (r) =>
+              r.active &&
+              r.wallet_id === selected?.id &&
+              r.categories.category_groups.kind === 'committed',
+          ),
+        )
+
+        return (
+          <section className="mt-6 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="text-sm font-medium">Committed — not budgeted</h2>
+              <span className="tabular-nums text-sm font-semibold">
+                {formatEur(committedActual)}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-neutral-500">
+              Rent, insurance, Rundfunkbeitrag, subscriptions. These are
+              contractual — you can&apos;t choose to spend less, so a budget bar
+              would be theatre. They&apos;re your monthly <em>floor</em> instead.
+            </p>
+            {committedExpected > 0 ? (
+              <p className="mt-2 text-xs text-neutral-500">
+                Expected from recurring rules:{' '}
+                <span className="tabular-nums font-medium">
+                  {formatEur(committedExpected)}
+                </span>
+                {committedActual !== committedExpected && (
+                  <>
+                    {' · '}
+                    <span
+                      className={
+                        committedActual > committedExpected ? 'text-amber-600' : ''
+                      }
+                    >
+                      {committedActual > committedExpected ? 'over' : 'under'} by{' '}
+                      {formatEur(Math.abs(committedActual - committedExpected))}
+                    </span>
+                  </>
+                )}
+              </p>
+            ) : (
+              <p className="mt-2 text-xs">
+                <Link href="/recurring" className="underline">
+                  Set up recurring rules
+                </Link>{' '}
+                so rent and insurance fill themselves in each month instead of
+                being retyped.
+              </p>
+            )}
+          </section>
+        )
+      })()}
+
+      <h2 className="mt-8 text-sm font-medium">Budgeted — variable spending</h2>
+      <p className="mt-1 text-xs text-neutral-500">
+        The spend you can actually move. Savings and investments are transfers, so
+        they never consume a budget.
+      </p>
+
+      <div className="mt-4 space-y-8">
         {variableGroups.map((group) => {
           const groupSpend = sumCents(
             walletExpenses.filter((e) => e.categories.category_groups.id === group.id),
@@ -168,9 +241,7 @@ export default async function BudgetsPage({
       </div>
 
       <p className="mt-10 text-xs text-neutral-500">
-        Committed spending isn&apos;t budgeted — it&apos;s contractual, and shown as your
-        monthly floor on Home instead. Savings and investments are transfers, so
-        they never consume a budget. Clear a budget by emptying the box and saving.
+        Clear a budget by emptying the box and saving.
       </p>
     </>
   )

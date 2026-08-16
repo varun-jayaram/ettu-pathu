@@ -207,6 +207,81 @@ export async function setAnchorDay(formData: FormData): Promise<void> {
   revalidatePath('/budgets')
 }
 
+/**
+ * Creates a recurring rule — rent, insurance, subscriptions, the donation.
+ *
+ * The rule is not the expense. materialize_recurring() turns it into real
+ * `expenses` rows on page load, idempotently, so generated rows stay editable
+ * and deletable like any other. day_of_month is CALENDAR-based: rent is due on
+ * the 1st whether or not that falls mid pay-cycle.
+ */
+export async function addRecurringRule(
+  _previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const walletId = String(formData.get('wallet_id') ?? '')
+  const categoryId = String(formData.get('category_id') ?? '')
+  const rawAmount = String(formData.get('amount') ?? '').replace(',', '.')
+  const dayOfMonth = Number(String(formData.get('day_of_month') ?? ''))
+  const startDate = String(formData.get('start_date') ?? '')
+  const note = String(formData.get('note') ?? '').trim()
+
+  if (!walletId || !categoryId) return { error: 'Pick a wallet and a category.' }
+
+  const amount = Number(rawAmount)
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { error: 'Enter an amount greater than zero.' }
+  }
+  if (!Number.isInteger(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) {
+    return { error: 'Day of month must be between 1 and 31.' }
+  }
+  if (!startDate) return { error: 'Pick a start date.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase.from('recurring_rules').insert({
+    wallet_id: walletId,
+    category_id: categoryId,
+    amount: amount.toFixed(2),
+    day_of_month: dayOfMonth,
+    start_date: startDate,
+    note: note || null,
+  })
+
+  if (error) {
+    return {
+      error:
+        error.code === '42501'
+          ? 'That wallet is not yours.'
+          : `Could not save: ${error.message}`,
+    }
+  }
+
+  // Fill in anything already due, so the rule shows its effect immediately
+  // rather than on some later page load.
+  await supabase.rpc('materialize_recurring')
+
+  revalidatePath('/')
+  revalidatePath('/recurring')
+  revalidatePath('/expenses')
+  redirect('/recurring?added=1')
+}
+
+/**
+ * Archives or reactivates a rule. Never deletes — the generated expenses stay
+ * either way, and history must remain resolvable. See PROJECT.md.
+ */
+export async function toggleRecurringRule(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  const active = String(formData.get('active') ?? '') === 'true'
+  if (!id) return
+
+  const supabase = await createClient()
+  await supabase.from('recurring_rules').update({ active: !active }).eq('id', id)
+
+  revalidatePath('/')
+  revalidatePath('/recurring')
+}
+
 export async function signOut(): Promise<void> {
   const supabase = await createClient()
   await supabase.auth.signOut()
