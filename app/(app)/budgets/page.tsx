@@ -1,5 +1,4 @@
-import Link from 'next/link'
-import { setBudget } from '../actions'
+import { setBudget, toggleRecurringRule } from '../actions'
 import {
   getBudgets,
   getCategoryGroups,
@@ -10,6 +9,7 @@ import {
 } from '@/lib/queries'
 import { formatEur, sumCents } from '@/lib/money'
 import { BudgetBar } from '@/components/budget-bar'
+import { RecurringForm } from '@/components/recurring-form'
 
 /**
  * Budgets: per wallet, at group level, one pay cycle, no rollover.
@@ -43,6 +43,7 @@ export default async function BudgetsPage({
   const variableGroups = groups.filter((g) => g.kind === 'variable')
 
   const walletExpenses = expenses.filter((e) => e.wallets.id === selected?.id)
+  const walletRules = rules.filter((r) => r.wallet_id === selected?.id)
 
   return (
     <>
@@ -98,7 +99,7 @@ export default async function BudgetsPage({
               contractual — you can&apos;t choose to spend less, so a budget bar
               would be theatre. They&apos;re your monthly <em>floor</em> instead.
             </p>
-            {committedExpected > 0 ? (
+            {committedExpected > 0 && (
               <p className="mt-2 text-xs text-neutral-500">
                 Expected from recurring rules:{' '}
                 <span className="tabular-nums font-medium">
@@ -118,15 +119,66 @@ export default async function BudgetsPage({
                   </>
                 )}
               </p>
-            ) : (
-              <p className="mt-2 text-xs">
-                <Link href="/recurring" className="underline">
-                  Set up recurring rules
-                </Link>{' '}
-                so rent and insurance fill themselves in each month instead of
-                being retyped.
-              </p>
             )}
+
+            {/* Recurring rules live here rather than on their own tab: they ARE
+                the committed floor, so planning them anywhere else split one
+                job across two screens. */}
+            <div className="mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                Recurring — fills itself in each month
+              </h3>
+
+              {walletRules.length === 0 ? (
+                <p className="mt-2 text-xs text-neutral-500">
+                  Nothing recurring in this wallet yet. Add rent, Strom, internet,
+                  insurance, Rundfunkbeitrag, subscriptions or your donation below
+                  and the floor stops needing to be retyped.
+                </p>
+              ) : (
+                <ul className="mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">
+                  {walletRules.map((rule) => (
+                    <li key={rule.id} className="flex items-center gap-3 py-2.5">
+                      <span aria-hidden>{rule.categories.icon ?? '↻'}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm">{rule.categories.name}</p>
+                        <p className="truncate text-xs text-neutral-500">
+                          day {rule.day_of_month}
+                          {rule.active ? '' : ' · stopped'}
+                          {rule.note ? ` · ${rule.note}` : ''}
+                        </p>
+                      </div>
+                      <span className="tabular-nums text-sm font-medium">
+                        {formatEur(Math.round(Number(rule.amount) * 100))}
+                      </span>
+                      <form action={toggleRecurringRule}>
+                        <input type="hidden" name="id" value={rule.id} />
+                        <input
+                          type="hidden"
+                          name="active"
+                          value={String(rule.active)}
+                        />
+                        <button
+                          type="submit"
+                          className="rounded-lg border border-neutral-300 px-2 py-1 text-xs text-neutral-500 dark:border-neutral-700"
+                        >
+                          {rule.active ? 'Stop' : 'Resume'}
+                        </button>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <details className="mt-3">
+                <summary className="cursor-pointer text-xs text-neutral-500">
+                  Add a recurring expense
+                </summary>
+                <div className="mt-3">
+                  <RecurringForm wallets={wallets} groups={groups} />
+                </div>
+              </details>
+            </div>
           </section>
         )
       })()}
