@@ -30,29 +30,29 @@ export function DesktopNav({ signOut }: { signOut: () => Promise<void> }) {
   const isActive = useIsActive()
 
   return (
-    <nav className="hidden items-center gap-4 text-sm sm:flex">
+    <nav className="hidden items-center gap-4 text-sm lg:flex">
       {TABS.map((tab) => (
         <Link
           key={tab.href}
           href={tab.href}
           aria-current={isActive(tab.href) ? 'page' : undefined}
-          className={
+          className={`whitespace-nowrap ${
             isActive(tab.href)
               ? 'font-medium underline underline-offset-4'
               : 'text-neutral-500 hover:underline'
-          }
+          }`}
         >
           {tab.label}
         </Link>
       ))}
       <Link
         href="/add"
-        className="rounded-lg bg-neutral-900 px-3 py-1.5 font-medium text-white dark:bg-white dark:text-neutral-900"
+        className="whitespace-nowrap rounded-lg bg-neutral-900 px-3 py-1.5 font-medium text-white dark:bg-white dark:text-neutral-900"
       >
         + Add
       </Link>
       <form action={signOut}>
-        <button type="submit" className="text-neutral-500 hover:underline">
+        <button type="submit" className="whitespace-nowrap text-neutral-500 hover:underline">
           Sign out
         </button>
       </form>
@@ -64,7 +64,7 @@ export function MobileNav() {
   const isActive = useIsActive()
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 border-t border-neutral-200 bg-white/95 backdrop-blur sm:hidden dark:border-neutral-800 dark:bg-neutral-950/95">
+    <nav className="fixed inset-x-0 bottom-0 border-t border-neutral-200 bg-white/95 backdrop-blur lg:hidden dark:border-neutral-800 dark:bg-neutral-950/95">
       <div className="mx-auto flex max-w-2xl items-center justify-around gap-1 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         {TABS.slice(0, 2).map((tab) => (
           <Tab key={tab.href} {...tab} active={isActive(tab.href)} />

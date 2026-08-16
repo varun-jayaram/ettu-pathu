@@ -183,7 +183,7 @@ export default async function HomePage() {
       <h2 className="mt-8 text-sm font-medium">Recent</h2>
       {expenses.length === 0 ? (
         <p className="mt-3 text-sm text-neutral-500">
-          Nothing logged this month yet.
+          Nothing logged this cycle yet.
         </p>
       ) : (
         <ul className="mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">

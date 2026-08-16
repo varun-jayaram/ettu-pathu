@@ -22,10 +22,10 @@ export default async function AppLayout({
   } = await supabase.auth.getUser()
 
   return (
-    <div className="min-h-dvh pb-24 sm:pb-0">
+    <div className="min-h-dvh pb-24 lg:pb-0">
       <header className="border-b border-neutral-200 dark:border-neutral-800">
         <div className="mx-auto flex max-w-2xl items-center justify-between gap-4 p-4">
-          <Link href="/" className="min-w-0">
+          <Link href="/" className="min-w-0 flex-1">
             <span className="block truncate font-semibold tracking-tight">
               Varavu Ettu Selavu Pathu
             </span>
@@ -34,11 +34,11 @@ export default async function AppLayout({
             </span>
           </Link>
 
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             <DesktopNav signOut={signOut} />
             <ThemeToggle />
-            <form action={signOut} className="sm:hidden">
-              <button type="submit" className="text-sm text-neutral-500">
+            <form action={signOut} className="lg:hidden">
+              <button type="submit" className="whitespace-nowrap text-sm text-neutral-500">
                 Sign out
               </button>
             </form>
