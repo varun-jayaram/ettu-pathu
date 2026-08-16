@@ -22,13 +22,13 @@
  *   SUPABASE_SERVICE_ROLE_KEY='sb_secret_...' node scripts/generate-auth-links.mjs \
  *     you@example.com wife@example.com
  *
- * Override the app origin (defaults to the LAN address so phones work):
+ * Override the app origin for local work:
  *
  *   APP_URL=http://localhost:3000 SUPABASE_SERVICE_ROLE_KEY='...' node ...
  */
 
 const supabaseUrl = 'https://rujhyijsoeezcclsladc.supabase.co'
-const appUrl = process.env.APP_URL ?? 'http://192.168.178.23:3000'
+const appUrl = process.env.APP_URL ?? 'https://ettu-pathu.vercel.app'
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 const emails = process.argv.slice(2)
 
