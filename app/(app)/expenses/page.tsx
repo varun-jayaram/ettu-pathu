@@ -1,6 +1,7 @@
 import { deleteExpense } from '../actions'
 import { getExpenses, getWallets, type ExpenseRow } from '@/lib/queries'
 import { formatEur, isSpend, sumCents, toCents } from '@/lib/money'
+import { ConfirmDelete } from '@/components/confirm-delete'
 
 /**
  * The searchable log. Filters are plain GET parameters so a filtered view is a
@@ -135,16 +136,15 @@ export default async function ExpensesPage({
                     >
                       {formatEur(toCents(expense.amount))}
                     </span>
-                    <form action={deleteExpense}>
-                      <input type="hidden" name="id" value={expense.id} />
-                      <button
-                        type="submit"
-                        aria-label="Delete expense"
-                        className="px-1 text-neutral-400 hover:text-red-600"
-                      >
-                        ×
-                      </button>
-                    </form>
+                    <ConfirmDelete
+                      action={deleteExpense}
+                      id={expense.id}
+                      title={expense.categories.name}
+                      detail={`${expense.wallets.name}${
+                        expense.note ? ` · ${expense.note}` : ''
+                      }`}
+                      amount={formatEur(toCents(expense.amount))}
+                    />
                   </li>
                 ))}
               </ul>

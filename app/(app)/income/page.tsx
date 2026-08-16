@@ -3,6 +3,7 @@ import { getCurrentPeriod, getIncome, getSettings, getWallets } from '@/lib/quer
 import { formatEur, sumCents } from '@/lib/money'
 import { todayIso } from '@/lib/period'
 import { IncomeForm } from '@/components/income-form'
+import { ConfirmDelete } from '@/components/confirm-delete'
 
 /**
  * Income — the "eight annas" half of the proverb, and the thing that defines
@@ -83,16 +84,15 @@ export default async function IncomePage({
                 <span className="tabular-nums text-sm font-medium">
                   {formatEur(Math.round(Number(row.amount) * 100))}
                 </span>
-                <form action={deleteIncome}>
-                  <input type="hidden" name="id" value={row.id} />
-                  <button
-                    type="submit"
-                    aria-label="Delete income"
-                    className="px-1 text-neutral-400 hover:text-red-600"
-                  >
-                    ×
-                  </button>
-                </form>
+                <ConfirmDelete
+                  action={deleteIncome}
+                  id={row.id}
+                  title={row.source}
+                  detail={`${formatDate(row.received_on)} · ${row.wallets.name}${
+                    row.note ? ` · ${row.note}` : ''
+                  }`}
+                  amount={formatEur(Math.round(Number(row.amount) * 100))}
+                />
               </li>
             ))}
           </ul>
