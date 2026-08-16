@@ -39,7 +39,13 @@ export default async function BudgetsPage({
     getRecurringRules(),
   ])
 
-  const selected = wallets.find((w) => w.id === params.wallet) ?? wallets[0]
+  // Default to Joint: it holds the shared costs and is the only wallet that
+  // offers recurring rules, so landing on a personal wallet hid the main
+  // feature of this page behind a click.
+  const selected =
+    wallets.find((w) => w.id === params.wallet) ??
+    wallets.find((w) => w.kind === 'joint') ??
+    wallets[0]
   const variableGroups = groups.filter((g) => g.kind === 'variable')
 
   const walletExpenses = expenses.filter((e) => e.wallets.id === selected?.id)
