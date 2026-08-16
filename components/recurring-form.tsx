@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react'
 import { addRecurringRule, type FormState } from '@/app/(app)/actions'
-import type { CategoryGroup, Wallet } from '@/lib/queries'
+import type { CategoryGroup } from '@/lib/queries'
 import { DateField } from '@/components/date-field'
 
 /**
@@ -10,11 +10,13 @@ import { DateField } from '@/components/date-field'
  * instead of being retyped every month.
  */
 export function RecurringForm({
-  wallets,
   groups,
+  walletId,
 }: {
-  wallets: Wallet[]
   groups: CategoryGroup[]
+  /** Always the joint wallet — recurring commitments are shared household
+   *  costs, so the form does not ask. */
+  walletId: string
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     addRecurringRule,
@@ -26,6 +28,8 @@ export function RecurringForm({
 
   return (
     <form action={formAction}>
+      <input type="hidden" name="wallet_id" value={walletId} readOnly />
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm font-medium" htmlFor="rec-amount">
@@ -80,20 +84,6 @@ export function RecurringForm({
         ))}
       </select>
 
-      <label className="mt-4 block text-sm font-medium" htmlFor="rec-wallet">
-        Wallet
-      </label>
-      <select id="rec-wallet" name="wallet_id" required className={field} defaultValue="">
-        <option value="" disabled>
-          Choose a wallet…
-        </option>
-        {wallets.map((wallet) => (
-          <option key={wallet.id} value={wallet.id}>
-            {wallet.name}
-            {wallet.kind === 'personal' ? ' (private)' : ' (shared)'}
-          </option>
-        ))}
-      </select>
 
       <div className="mt-4">
         <DateField name="start_date" label="Starting from" />

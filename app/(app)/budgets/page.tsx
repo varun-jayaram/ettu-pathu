@@ -44,6 +44,10 @@ export default async function BudgetsPage({
 
   const walletExpenses = expenses.filter((e) => e.wallets.id === selected?.id)
   const walletRules = rules.filter((r) => r.wallet_id === selected?.id)
+  // Recurring commitments — rent, insurance, subscriptions — are shared costs,
+  // so they are only offered on the joint wallet.
+  const jointWallet = wallets.find((w) => w.kind === 'joint')
+  const showRecurring = selected?.kind === 'joint' && Boolean(jointWallet)
 
   return (
     <>
@@ -123,7 +127,8 @@ export default async function BudgetsPage({
 
             {/* Recurring rules live here rather than on their own tab: they ARE
                 the committed floor, so planning them anywhere else split one
-                job across two screens. */}
+                job across two screens. Joint only. */}
+            {showRecurring && (
             <div className="mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-800">
               <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                 Recurring — fills itself in each month
@@ -175,10 +180,11 @@ export default async function BudgetsPage({
                   Add a recurring expense
                 </summary>
                 <div className="mt-3">
-                  <RecurringForm wallets={wallets} groups={groups} />
+                  <RecurringForm groups={groups} walletId={jointWallet!.id} />
                 </div>
               </details>
             </div>
+            )}
           </section>
         )
       })()}
