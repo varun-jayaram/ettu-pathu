@@ -14,11 +14,9 @@ import { DateField } from '@/components/date-field'
 export function ExpenseForm({
   wallets,
   groups,
-  today,
 }: {
   wallets: Wallet[]
   groups: CategoryGroup[]
-  today: string
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     addExpense,
@@ -92,7 +90,7 @@ export function ExpenseForm({
       </select>
 
       <div className="mt-4">
-        <DateField name="spent_on" today={today} />
+        <DateField name="spent_on" />
       </div>
 
       <label className="mt-4 block text-sm font-medium" htmlFor="note">

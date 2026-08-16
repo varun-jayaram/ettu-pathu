@@ -2,13 +2,7 @@
 
 import { useActionState } from 'react'
 import { addIncome, type FormState } from '@/app/(app)/actions'
-
-/** Today in the browser's own timezone, as YYYY-MM-DD. */
-function localToday(): string {
-  const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-}
+import { DateField } from '@/components/date-field'
 
 const SOURCES = [
   ['salary', 'Salary'],
@@ -31,10 +25,6 @@ export function IncomeForm() {
 
   return (
     <form action={formAction}>
-      {/* Income is always dated the day it is entered. Computed in the browser
-          so it is the user's local date — the server runs in UTC, which would
-          record "yesterday" for anything logged late in a German evening. */}
-      <input type="hidden" name="received_on" value={localToday()} readOnly />
 
       <label className="block text-sm font-medium" htmlFor="income-amount">
         Amount
@@ -68,6 +58,10 @@ export function IncomeForm() {
         Only <strong>Salary</strong> moves the pay-cycle start date.
       </p>
 
+
+      <div className="mt-4">
+        <DateField name="received_on" label="Received on" />
+      </div>
 
       <label className="mt-4 block text-sm font-medium" htmlFor="income-note">
         Note <span className="font-normal text-neutral-500">(optional)</span>

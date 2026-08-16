@@ -12,11 +12,9 @@ import { DateField } from '@/components/date-field'
 export function RecurringForm({
   wallets,
   groups,
-  today,
 }: {
   wallets: Wallet[]
   groups: CategoryGroup[]
-  today: string
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     addRecurringRule,
@@ -98,7 +96,7 @@ export function RecurringForm({
       </select>
 
       <div className="mt-4">
-        <DateField name="start_date" today={today} label="Starting from" />
+        <DateField name="start_date" label="Starting from" />
       </div>
       <p className="mt-1 text-xs text-neutral-500">
         Back-date this and every occurrence since will be filled in at once.

@@ -1,7 +1,6 @@
 import { toggleRecurringRule } from '../actions'
 import { getCategoryGroups, getRecurringRules, getWallets } from '@/lib/queries'
 import { formatEur, sumCents } from '@/lib/money'
-import { todayIso } from '@/lib/period'
 import { RecurringForm } from '@/components/recurring-form'
 
 /**
@@ -108,7 +107,7 @@ export default async function RecurringPage({
       <section className="mt-10">
         <h2 className="text-sm font-medium">Add a recurring expense</h2>
         <div className="mt-3">
-          <RecurringForm wallets={wallets} groups={groups} today={todayIso()} />
+          <RecurringForm wallets={wallets} groups={groups} />
         </div>
       </section>
 
