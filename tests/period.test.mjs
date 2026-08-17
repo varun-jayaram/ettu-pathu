@@ -1,4 +1,4 @@
-import { getPeriod } from '../lib/period.ts'
+import { getPeriod, nextOccurrence } from '../lib/period.ts'
 
 let failed = 0
 const eq = (label, actual, expected) => {
@@ -72,6 +72,18 @@ eq('both ends snap',
 eq('leap year: anchor 29, Feb 2028',
   range(getPeriod('2028-03-01', { anchorDay: 29 })),
   ['2028-02-29', '2028-03-28', 'March 2028'])
+
+// --- nextOccurrence: start_date must beat day_of_month --------------------
+eq('day 1 rule starting 16 Aug -> first fires 1 Sep',
+  nextOccurrence(1, '2026-08-16', '2026-08-17'), '2026-09-01')
+eq('day 1 rule started long ago, today 17 Aug -> 1 Sep',
+  nextOccurrence(1, '2026-01-01', '2026-08-17'), '2026-09-01')
+eq('day 20 rule, today 17 Aug -> 20 Aug',
+  nextOccurrence(20, '2026-01-01', '2026-08-17'), '2026-08-20')
+eq('day 20 rule, today IS the 20th -> today',
+  nextOccurrence(20, '2026-01-01', '2026-08-20'), '2026-08-20')
+eq('day 31 rule in February clamps to the 28th',
+  nextOccurrence(31, '2026-01-01', '2026-02-01'), '2026-02-28')
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll period cases correct.')
 process.exit(failed ? 1 : 0)

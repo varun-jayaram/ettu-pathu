@@ -170,6 +170,30 @@ export function getPeriod(
   }
 }
 
+/**
+ * The next date a recurring rule will fire, on or after `today`.
+ *
+ * Respects `start_date` — a rule dated day 1 but starting on the 16th does not
+ * fire on the 1st of that month; its first occurrence is the 1st of the next.
+ * That is correct, and it is also the source of an apparent discrepancy worth
+ * surfacing in the UI rather than making people work out.
+ */
+export function nextOccurrence(
+  dayOfMonth: number,
+  startDate: ISODate,
+  today: ISODate,
+): ISODate {
+  const floor = startDate > today ? startDate : today
+  const [y, m] = parseIso(floor)
+
+  for (let offset = 0; offset <= 13; offset++) {
+    const [oy, om] = shiftMonth(y, m, offset)
+    const candidate = iso(oy, om, clampDay(oy, om, dayOfMonth))
+    if (candidate >= floor) return candidate
+  }
+  return floor
+}
+
 /** Today as YYYY-MM-DD in the user's local timezone. */
 export function todayIso(): ISODate {
   const now = new Date()

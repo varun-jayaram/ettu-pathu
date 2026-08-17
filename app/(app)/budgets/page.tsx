@@ -19,6 +19,7 @@ import { BudgetBar } from '@/components/budget-bar'
 import { RecurringForm } from '@/components/recurring-form'
 import { ConfirmDelete } from '@/components/confirm-delete'
 import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
+import { nextOccurrence, todayIso } from '@/lib/period'
 
 /**
  * Plan — the two ways money is committed ahead of time.
@@ -62,7 +63,17 @@ export default async function PlanPage({
   const walletExpenses = expenses.filter((e) => e.wallets.id === selected?.id)
   const walletRules = rules.filter((r) => r.wallet_id === selected?.id)
   const showRecurring = selected?.kind === 'joint'
-  const recurringMonthly = sumCents(walletRules.filter((r) => r.active))
+  const activeRules = walletRules.filter((r) => r.active)
+  const recurringMonthly = sumCents(activeRules)
+
+  // What those rules have actually produced this cycle. These differ whenever a
+  // rule is not due yet — a rule dated day 1 but started on the 16th first
+  // fires next month — and the gap was confusing without being shown.
+  const recurringLanded = sumCents(
+    walletExpenses.filter((e) => e.recurring_rule_id),
+  )
+  const notYetDue = recurringMonthly - recurringLanded
+  const today = todayIso()
 
   return (
     <>
@@ -94,8 +105,17 @@ export default async function PlanPage({
             <h2 className="text-sm font-medium">Recurring</h2>
             <span className="tabular-nums text-sm font-semibold">
               {formatEur(recurringMonthly)}
+              <span className="ml-1 font-normal text-neutral-500">/ month</span>
             </span>
           </div>
+          {notYetDue !== 0 && (
+            <p className="mt-1 text-xs text-neutral-500">
+              {formatEur(recurringLanded)} of it has landed this cycle ·{' '}
+              <span className="text-amber-600">
+                {formatEur(notYetDue)} not due yet
+              </span>
+            </p>
+          )}
           <p className="mt-1 text-xs text-neutral-500">
             Goes out every month whatever you do — rent, insurance, loans,
             subscriptions, tickets, donations, savings. Entered once, then filled
@@ -122,6 +142,19 @@ export default async function PlanPage({
                       day {rule.day_of_month} · {rule.categories.category_groups.name}
                       {rule.note ? ` · ${rule.note}` : ''}
                     </p>
+                    {rule.active &&
+                      !walletExpenses.some((e) => e.recurring_rule_id === rule.id) && (
+                        <p className="truncate text-xs text-amber-600">
+                          not due this cycle · next{' '}
+                          {new Date(
+                            `${nextOccurrence(rule.day_of_month, rule.start_date, today)}T00:00:00Z`,
+                          ).toLocaleDateString('en-GB', {
+                            day: 'numeric',
+                            month: 'short',
+                            timeZone: 'UTC',
+                          })}
+                        </p>
+                      )}
                   </div>
                   <span className="tabular-nums text-sm font-medium">
                     {formatEur(toCents(rule.amount))}
@@ -171,6 +204,19 @@ export default async function PlanPage({
                         defaultValue={rule.day_of_month}
                         className={fieldClass}
                       />
+                    </Field>
+                    <Field label="Starting from">
+                      <input
+                        name="start_date"
+                        type="date"
+                        required
+                        defaultValue={rule.start_date}
+                        className={fieldClass}
+                      />
+                      <span className="mt-1 block text-xs text-neutral-500">
+                        Occurrences before this date are skipped. Move it earlier
+                        to backfill a month that was missed.
+                      </span>
                     </Field>
                     <Field label="Note">
                       <input
@@ -251,23 +297,29 @@ export default async function PlanPage({
                 </div>
               )}
 
-              <form action={setBudget} className="mt-2 flex gap-2">
-                <input type="hidden" name="wallet_id" value={selected?.id ?? ''} />
-                <input type="hidden" name="group_id" value={group.id} />
-                <input
-                  name="amount"
-                  inputMode="decimal"
-                  type="text"
-                  placeholder="Set a monthly budget…"
-                  defaultValue={groupBudget ? Number(groupBudget.amount).toFixed(2) : ''}
-                  className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
-                />
-                <button
-                  type="submit"
-                  className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700"
-                >
-                  Save
-                </button>
+              {/* ConfirmDelete renders its own <form>, so it must be a SIBLING
+                  of this one. Nested forms are invalid HTML: the parser closes
+                  the outer form at the inner one, orphaning this Save button so
+                  it silently stops submitting. */}
+              <div className="mt-2 flex items-center gap-2">
+                <form action={setBudget} className="flex min-w-0 flex-1 gap-2">
+                  <input type="hidden" name="wallet_id" value={selected?.id ?? ''} />
+                  <input type="hidden" name="group_id" value={group.id} />
+                  <input
+                    name="amount"
+                    inputMode="decimal"
+                    type="text"
+                    placeholder="Set a monthly budget…"
+                    defaultValue={groupBudget ? Number(groupBudget.amount).toFixed(2) : ''}
+                    className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700"
+                  >
+                    Save
+                  </button>
+                </form>
                 {groupBudget && (
                   <ConfirmDelete
                     action={deleteBudget}
@@ -277,7 +329,7 @@ export default async function PlanPage({
                     amount={formatEur(groupBudgetCents)}
                   />
                 )}
-              </form>
+              </div>
 
               {/* Sub-limits are tripwires inside the group, never a second
                   definition of "over". */}
@@ -306,32 +358,38 @@ export default async function PlanPage({
                             advisory
                           />
                         )}
-                        <form action={setBudget} className="mt-1 flex gap-2 pl-4">
-                          <input
-                            type="hidden"
-                            name="wallet_id"
-                            value={selected?.id ?? ''}
-                          />
-                          <input type="hidden" name="category_id" value={category.id} />
-                          <span className="flex-1 self-center truncate text-xs text-neutral-500">
-                            {category.icon} {category.name}
-                          </span>
-                          <input
-                            name="amount"
-                            inputMode="decimal"
-                            type="text"
-                            placeholder="—"
-                            defaultValue={
-                              catBudget ? Number(catBudget.amount).toFixed(2) : ''
-                            }
-                            className="w-24 rounded-lg border border-neutral-300 bg-transparent px-2 py-1.5 text-xs dark:border-neutral-700"
-                          />
-                          <button
-                            type="submit"
-                            className="rounded-lg border border-neutral-300 px-2 py-1.5 text-xs dark:border-neutral-700"
-                          >
-                            Set
-                          </button>
+                        <div className="mt-1 flex items-center gap-2 pl-4">
+                          <form action={setBudget} className="flex min-w-0 flex-1 gap-2">
+                            <input
+                              type="hidden"
+                              name="wallet_id"
+                              value={selected?.id ?? ''}
+                            />
+                            <input
+                              type="hidden"
+                              name="category_id"
+                              value={category.id}
+                            />
+                            <span className="flex-1 self-center truncate text-xs text-neutral-500">
+                              {category.icon} {category.name}
+                            </span>
+                            <input
+                              name="amount"
+                              inputMode="decimal"
+                              type="text"
+                              placeholder="—"
+                              defaultValue={
+                                catBudget ? Number(catBudget.amount).toFixed(2) : ''
+                              }
+                              className="w-24 rounded-lg border border-neutral-300 bg-transparent px-2 py-1.5 text-xs dark:border-neutral-700"
+                            />
+                            <button
+                              type="submit"
+                              className="rounded-lg border border-neutral-300 px-2 py-1.5 text-xs dark:border-neutral-700"
+                            >
+                              Set
+                            </button>
+                          </form>
                           {catBudget && (
                             <ConfirmDelete
                               action={deleteBudget}
@@ -341,7 +399,7 @@ export default async function PlanPage({
                               amount={formatEur(catCents)}
                             />
                           )}
-                        </form>
+                        </div>
                         {/* Which Home box this category lands in. Purely a
                             display split — savings still counts as spending. */}
                         <form action={toggleCategorySavings} className="mt-1 pl-4">

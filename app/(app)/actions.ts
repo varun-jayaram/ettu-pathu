@@ -137,24 +137,45 @@ export async function updateRecurringRule(formData: FormData): Promise<void> {
   const amount = parseAmount(formData.get('amount'))
   const categoryId = String(formData.get('category_id') ?? '')
   const dayOfMonth = Number(String(formData.get('day_of_month') ?? ''))
+  const startDate = String(formData.get('start_date') ?? '')
   const note = String(formData.get('note') ?? '').trim()
 
-  if (!id || amount === null || !categoryId) return
+  if (!id || amount === null || !categoryId || !startDate) return
   if (!Number.isInteger(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) return
 
   const supabase = await createClient()
+
+  /**
+   * last_generated_on is reset so a corrected start date can actually backfill.
+   *
+   * The watermark exists to stop re-generating the same occurrence twice. But
+   * it also blocks anything EARLIER than itself — so moving a start date back
+   * (the common fix for "I set the wrong start and it skipped a month") would
+   * silently do nothing. Clearing it lets materialize_recurring reconsider the
+   * whole range.
+   *
+   * Safe because duplicates are impossible regardless: the partial unique index
+   * on (recurring_rule_id, spent_on) rejects any occurrence that already
+   * exists. Existing rows also keep their old amount, which is correct —
+   * editing rent to 950 does not rewrite the 890 you actually paid.
+   */
   await supabase
     .from('recurring_rules')
     .update({
       amount: amount.toFixed(2),
       category_id: categoryId,
       day_of_month: dayOfMonth,
+      start_date: startDate,
       note: note || null,
+      last_generated_on: null,
     })
     .eq('id', id)
 
+  await supabase.rpc('materialize_recurring')
+
   revalidatePath('/')
   revalidatePath('/budgets')
+  revalidatePath('/expenses')
 }
 
 /**
