@@ -17,7 +17,13 @@ export type CategoryGroup = {
   id: string
   name: string
   sort_order: number
-  categories: { id: string; name: string; icon: string | null; sort_order: number }[]
+  categories: {
+    id: string
+    name: string
+    icon: string | null
+    sort_order: number
+    is_savings: boolean
+  }[]
 }
 
 export type ExpenseRow = {
@@ -31,6 +37,7 @@ export type ExpenseRow = {
     id: string
     name: string
     icon: string | null
+    is_savings: boolean
     category_groups: { id: string; name: string }
   }
 }
@@ -51,7 +58,7 @@ export async function getCategoryGroups(): Promise<CategoryGroup[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('category_groups')
-    .select('id, name, sort_order, categories(id, name, icon, sort_order, active)')
+    .select('id, name, sort_order, categories(id, name, icon, sort_order, active, is_savings)')
     .eq('active', true)
     .order('sort_order')
 
@@ -66,7 +73,7 @@ export async function getCategoryGroups(): Promise<CategoryGroup[]> {
 const EXPENSE_SELECT = `
   id, amount, spent_on, note, recurring_rule_id,
   wallets!inner(id, name, kind),
-  categories!inner(id, name, icon, category_groups!inner(id, name))
+  categories!inner(id, name, icon, is_savings, category_groups!inner(id, name))
 `
 
 export async function getExpenses(options: {

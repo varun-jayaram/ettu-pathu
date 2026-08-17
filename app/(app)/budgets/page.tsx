@@ -2,6 +2,7 @@ import {
   deleteBudget,
   deleteRecurringRule,
   setBudget,
+  toggleCategorySavings,
   toggleRecurringRule,
   updateRecurringRule,
 } from '../actions'
@@ -340,6 +341,26 @@ export default async function PlanPage({
                               amount={formatEur(catCents)}
                             />
                           )}
+                        </form>
+                        {/* Which Home box this category lands in. Purely a
+                            display split — savings still counts as spending. */}
+                        <form action={toggleCategorySavings} className="mt-1 pl-4">
+                          <input type="hidden" name="id" value={category.id} />
+                          <input
+                            type="hidden"
+                            name="is_savings"
+                            value={String(category.is_savings)}
+                          />
+                          <button
+                            type="submit"
+                            className={`text-xs ${
+                              category.is_savings
+                                ? 'text-neutral-900 dark:text-white'
+                                : 'text-neutral-400'
+                            }`}
+                          >
+                            {category.is_savings ? '☑' : '☐'} counts as savings
+                          </button>
                         </form>
                       </div>
                     )

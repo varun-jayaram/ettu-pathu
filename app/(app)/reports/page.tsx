@@ -17,7 +17,7 @@ import { CycleColumns, GroupBars, VizStyles } from '@/components/charts'
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ wallet?: string }>
+  searchParams: Promise<{ wallet?: string; view?: 'expenses' | 'savings' }>
 }) {
   const params = await searchParams
   const [period, periods, wallets] = await Promise.all([
@@ -32,8 +32,16 @@ export default async function ReportsPage({
     getIncome({ ...span, limit: 500 }),
   ])
 
+  // `view` narrows to money spent vs money kept. Savings still counts in every
+  // total — this only chooses what the breakdowns are about.
+  const view = params.view
+  const matchesView = (e: { categories: { is_savings: boolean } }) =>
+    view === 'savings' ? e.categories.is_savings
+    : view === 'expenses' ? !e.categories.is_savings
+    : true
+
   const inCycle = allExpenses.filter(
-    (e) => e.spent_on >= period.from && e.spent_on <= period.to,
+    (e) => e.spent_on >= period.from && e.spent_on <= period.to && matchesView(e),
   )
   const spend = inCycle
   const recurring = inCycle.filter((e) => e.recurring_rule_id)
@@ -100,8 +108,34 @@ export default async function ReportsPage({
       </p>
 
       <div className="mt-3 flex flex-wrap gap-2">
+        {([
+          ['', 'Everything'],
+          ['expenses', 'Expenses'],
+          ['savings', 'Savings'],
+        ] as const).map(([value, label]) => {
+          const query = new URLSearchParams()
+          if (params.wallet) query.set('wallet', params.wallet)
+          if (value) query.set('view', value)
+          const active = (params.view ?? '') === value
+          return (
+            <Link
+              key={label}
+              href={`/reports${query.toString() ? `?${query}` : ''}`}
+              className={`rounded-lg border px-3 py-1.5 text-sm ${
+                active
+                  ? 'border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900'
+                  : 'border-neutral-300 dark:border-neutral-700'
+              }`}
+            >
+              {label}
+            </Link>
+          )
+        })}
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-2">
         <Link
-          href="/reports"
+          href={params.view ? `/reports?view=${params.view}` : '/reports'}
           className={`rounded-lg border px-3 py-1.5 text-sm ${
             !params.wallet
               ? 'border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900'
@@ -113,7 +147,7 @@ export default async function ReportsPage({
         {wallets.map((wallet) => (
           <Link
             key={wallet.id}
-            href={`/reports?wallet=${wallet.id}`}
+            href={`/reports?wallet=${wallet.id}${params.view ? `&view=${params.view}` : ''}`}
             className={`rounded-lg border px-3 py-1.5 text-sm ${
               params.wallet === wallet.id
                 ? 'border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900'
@@ -128,22 +162,26 @@ export default async function ReportsPage({
       {/* Hero: the one number the page leads with. */}
       <section className="mt-6">
         <p className="text-xs text-neutral-500">
-          {params.wallet ? 'Spent this cycle' : 'Left this cycle'}
+          {view === 'savings'
+            ? 'Saved this cycle'
+            : params.wallet || view === 'expenses'
+              ? 'Spent this cycle'
+              : 'Left this cycle'}
         </p>
         <p
           className={`mt-1 text-5xl font-semibold tabular-nums ${
             !params.wallet && netCents < 0 ? 'text-red-600' : ''
           }`}
         >
-          {formatEur(params.wallet ? spendCents : netCents)}
+          {formatEur(params.wallet || view ? spendCents : netCents)}
         </p>
-        {!params.wallet && (
+        {!params.wallet && !view && (
           <p className="mt-1 text-sm text-neutral-500">
             {formatEur(incomeCents)} in · {formatEur(spendCents)} out
             {recurringCents > 0 && ` · ${formatEur(recurringCents)} of it recurring`}
           </p>
         )}
-        {!params.wallet && netCents < 0 && (
+        {!params.wallet && !view && netCents < 0 && (
           <p className="mt-1 text-sm text-red-600">
             வரவு எட்டணா, செலவு பத்தணா — out is ahead of in this cycle.
           </p>

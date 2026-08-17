@@ -10,6 +10,7 @@ import {
 } from '@/lib/queries'
 import { formatEur, sumCents, toCents } from '@/lib/money'
 import { BudgetBar } from '@/components/budget-bar'
+import { budgetState } from '@/lib/queries'
 
 /**
  * This cycle at a glance.
@@ -36,9 +37,13 @@ export default async function HomePage() {
     getIncome({ from, to }),
   ])
 
-  const recurringCents = sumCents(expenses.filter((e) => e.recurring_rule_id))
-  const otherCents = sumCents(expenses.filter((e) => !e.recurring_rule_id))
-  const spentCents = recurringCents + otherCents
+  // Savings is money put aside rather than consumed. It still counts in "Out"
+  // and in "Left" — putting money away is not the same as still having it —
+  // but it gets its own box, because "how much did we keep" is a different
+  // question from "how much did we spend".
+  const savingsCents = sumCents(expenses.filter((e) => e.categories.is_savings))
+  const expensesCents = sumCents(expenses.filter((e) => !e.categories.is_savings))
+  const spentCents = expensesCents + savingsCents
 
   const incomeCents = sumCents(income)
   const leftCents = incomeCents - spentCents
@@ -88,24 +93,31 @@ export default async function HomePage() {
       )}
 
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-xs text-neutral-500">Recurring</p>
+        <Link
+          href="/reports?view=expenses"
+          className="rounded-xl border border-neutral-200 p-4 hover:border-neutral-400 dark:border-neutral-800 dark:hover:border-neutral-600"
+        >
+          <p className="text-xs text-neutral-500">Expenses</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums">
-            {formatEur(recurringCents)}
+            {formatEur(expensesCents)}
           </p>
-          <p className="mt-1 text-xs text-neutral-500">goes out every month</p>
-        </div>
-        <div className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-xs text-neutral-500">Everything else</p>
+          <p className="mt-1 text-xs text-neutral-500">money spent →</p>
+        </Link>
+        <Link
+          href="/reports?view=savings"
+          className="rounded-xl border border-neutral-200 p-4 hover:border-neutral-400 dark:border-neutral-800 dark:hover:border-neutral-600"
+        >
+          <p className="text-xs text-neutral-500">Savings</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums">
-            {formatEur(otherCents)}
+            {formatEur(savingsCents)}
           </p>
-          <p className="mt-1 text-xs text-neutral-500">what you chose to spend</p>
-        </div>
+          <p className="mt-1 text-xs text-neutral-500">money kept →</p>
+        </Link>
       </div>
 
-      {/* Group budgets across every wallet the user belongs to. Category
-          sub-limits live on Plan, since they warn rather than define "over". */}
+      {/* Grouped by how they are doing, so "where am I over?" is answered
+          without reading every bar. Category sub-limits stay on Plan — they
+          warn rather than define "over". */}
       {(() => {
         const bars = budgets
           .filter((b) => b.scope === 'group')
@@ -113,17 +125,20 @@ export default async function HomePage() {
             const group = groups.find((g) => g.id === budget.group_id)
             const wallet = wallets.find((w) => w.id === budget.wallet_id)
             if (!group || !wallet) return null
+            const spentCents = sumCents(
+              expenses.filter(
+                (e) =>
+                  e.wallets.id === wallet.id &&
+                  e.categories.category_groups.id === group.id,
+              ),
+            )
+            const budgetCents = toCents(budget.amount)
             return {
               key: budget.id,
               label: `${group.name} · ${wallet.name}`,
-              spentCents: sumCents(
-                expenses.filter(
-                  (e) =>
-                    e.wallets.id === wallet.id &&
-                    e.categories.category_groups.id === group.id,
-                ),
-              ),
-              budgetCents: toCents(budget.amount),
+              spentCents,
+              budgetCents,
+              state: budgetState(spentCents, budgetCents),
             }
           })
           .filter((bar) => bar !== null)
@@ -141,19 +156,44 @@ export default async function HomePage() {
           )
         }
 
+        const sections = [
+          { state: 'over' as const, title: 'Over budget', tone: 'text-red-600' },
+          { state: 'approaching' as const, title: 'Getting close', tone: 'text-amber-600' },
+          { state: 'normal' as const, title: 'Within budget', tone: 'text-neutral-500' },
+        ]
+
         return (
           <>
             <h2 className="mt-8 text-sm font-medium">Budgets</h2>
-            <div className="mt-3 space-y-4">
-              {bars.map((bar) => (
-                <BudgetBar
-                  key={bar.key}
-                  label={bar.label}
-                  spentCents={bar.spentCents}
-                  budgetCents={bar.budgetCents}
-                />
-              ))}
+            <div className="mt-3 space-y-6">
+              {sections.map((section) => {
+                const rows = bars.filter((bar) => bar.state === section.state)
+                if (rows.length === 0) return null
+                return (
+                  <div key={section.state}>
+                    <p className={`text-xs font-medium ${section.tone}`}>
+                      {section.title} · {rows.length}
+                    </p>
+                    <div className="mt-2 space-y-4">
+                      {rows.map((bar) => (
+                        <BudgetBar
+                          key={bar.key}
+                          label={bar.label}
+                          spentCents={bar.spentCents}
+                          budgetCents={bar.budgetCents}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
+            <Link
+              href="/budgets"
+              className="mt-3 inline-block text-sm text-neutral-500 hover:underline"
+            >
+              Manage budgets →
+            </Link>
           </>
         )
       })()}

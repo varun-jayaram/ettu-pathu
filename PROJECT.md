@@ -128,13 +128,25 @@ categorising honestly at the moment of entry, and an entry you cannot file is an
 entry you do not make. Misc is deliberate; a Misc that grows is the signal to
 add a category.
 
-### Everything counts as spending
+### Savings counts as spending, but is shown apart
 
-Savings and investments used to be excluded from every total. That is gone, at
-the user's explicit request: one rule, no exceptions to explain. The argument
-against — that a good savings month then reads as a blowout — was put and
-declined. If it is ever reinstated, do it as an explicit flag on the category,
-not as a group label, or the same drift returns.
+Savings and investments are **included** in every total — in "Out" and in
+"Left". Putting money aside is not the same as still having it available.
+
+They are nonetheless shown in their own box on Home, because *how much did we
+keep* is a different question from *how much did we spend*. That split is driven
+by **`categories.is_savings`** — and the distinction from the old `kind` is the
+whole point:
+
+| | `kind` (removed) | `is_savings` |
+|---|---|---|
+| Lives on | the group | the category |
+| Decides | three unrelated things | one thing: which Home box |
+| Survives renaming/regrouping | no | yes |
+
+A category inherited `kind` from whichever folder it happened to sit in, which
+is how Deutschlandticket became "variable". `is_savings` is set per category and
+toggled in the app, so it cannot drift.
 
 ---
 

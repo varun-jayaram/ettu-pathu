@@ -413,6 +413,26 @@ export async function toggleRecurringRule(formData: FormData): Promise<void> {
   revalidatePath('/recurring')
 }
 
+/**
+ * Marks a category as savings, or unmarks it.
+ *
+ * Affects only which box it lands in on Home. It still counts as spending in
+ * every total — putting money aside is not the same as still having it
+ * available. See PROJECT.md.
+ */
+export async function toggleCategorySavings(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  const isSavings = String(formData.get('is_savings') ?? '') === 'true'
+  if (!id) return
+
+  const supabase = await createClient()
+  await supabase.from('categories').update({ is_savings: !isSavings }).eq('id', id)
+
+  revalidatePath('/')
+  revalidatePath('/budgets')
+  revalidatePath('/reports')
+}
+
 export async function signOut(): Promise<void> {
   const supabase = await createClient()
   await supabase.auth.signOut()
