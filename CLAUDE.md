@@ -33,7 +33,7 @@ Environment — copy `.env.example` to `.env.local`:
 
 ```
 wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy design
-         ├─ expenses ──────── categories ── category_groups (kind)
+         ├─ expenses ──────── categories ── category_groups (folders)
          ├─ recurring_rules ─ categories
          └─ budgets ───────── category_groups | categories
 ```
