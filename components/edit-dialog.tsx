@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef } from 'react'
+import { useRef, useState, useTransition } from 'react'
 
 /**
  * Edit-in-a-dialog, the counterpart to ConfirmDelete.
@@ -10,8 +10,11 @@ import { useRef } from 'react'
  * Children are server-rendered, which keeps the category and wallet lists on
  * the server where they are already loaded.
  *
- * Native <dialog> again: focus trapping, Escape-to-close and top-layer
- * rendering for free.
+ * Submission is handled in JS rather than by letting the form post directly.
+ * A native <dialog> stays open until something calls close(), and a plain
+ * `action={serverAction}` never does — so Save appeared to do nothing even
+ * though the write had gone through. Calling the action inside a transition
+ * lets us show a pending state and close only once it has actually finished.
  */
 export function EditDialog({
   action,
@@ -27,6 +30,24 @@ export function EditDialog({
   children: React.ReactNode
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
+  const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+
+  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    setError(null)
+
+    startTransition(async () => {
+      try {
+        await action(formData)
+        dialog.current?.close()
+      } catch {
+        // Keep the dialog open so the edit is not lost.
+        setError('Could not save. Please try again.')
+      }
+    })
+  }
 
   return (
     <>
@@ -41,14 +62,17 @@ export function EditDialog({
 
       <dialog
         ref={dialog}
+        onClose={() => setError(null)}
         className="m-auto w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-neutral-200 bg-white p-5 text-neutral-900 backdrop:bg-black/50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
       >
         <h2 className="text-base font-semibold">{title}</h2>
 
-        <form action={action} className="mt-4">
+        <form onSubmit={onSubmit} className="mt-4">
           <input type="hidden" name="id" value={id} />
 
           <div className="space-y-3">{children}</div>
+
+          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
           <div className="mt-5 flex gap-2">
             <button
@@ -60,9 +84,10 @@ export function EditDialog({
             </button>
             <button
               type="submit"
-              className="flex-1 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-neutral-900"
+              disabled={pending}
+              className="flex-1 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
             >
-              Save
+              {pending ? 'Saving…' : 'Save'}
             </button>
           </div>
         </form>

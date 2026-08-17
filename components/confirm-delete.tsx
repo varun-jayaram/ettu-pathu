@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef } from 'react'
+import { useRef, useTransition } from 'react'
 
 /**
  * Delete behind a confirmation dialog.
@@ -9,8 +9,10 @@ import { useRef } from 'react'
  * phone the target sits right under the thumb. This shows what is about to go,
  * with its amount, and puts Cancel where the thumb already is.
  *
- * Uses the native <dialog>: it gets focus trapping, Escape-to-close and the
- * top layer for free, none of which is worth reimplementing.
+ * Uses the native <dialog>: focus trapping, Escape-to-close and the top layer
+ * come free. But a native dialog only closes when something calls close(), so
+ * the delete is run in a transition and the dialog closed explicitly once it
+ * resolves — otherwise the row vanishes underneath a modal that stays up.
  *
  * The server action is passed in as a prop — Server Actions are serialisable
  * references, so the delete still runs on the server and RLS still governs
@@ -30,6 +32,20 @@ export function ConfirmDelete({
   amount: string
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
+  const [pending, startTransition] = useTransition()
+
+  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+
+    startTransition(async () => {
+      try {
+        await action(formData)
+      } finally {
+        dialog.current?.close()
+      }
+    })
+  }
 
   return (
     <>
@@ -59,26 +75,23 @@ export function ConfirmDelete({
 
         <p className="mt-3 text-sm text-neutral-500">This cannot be undone.</p>
 
-        <div className="mt-5 flex gap-2">
-          {/* method="dialog" closes without submitting anything. */}
-          <form method="dialog" className="flex-1">
-            <button
-              type="submit"
-              className="w-full rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-medium dark:border-neutral-700"
-            >
-              Cancel
-            </button>
-          </form>
-          <form action={action} className="flex-1">
-            <input type="hidden" name="id" value={id} />
-            <button
-              type="submit"
-              className="w-full rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white"
-            >
-              Delete
-            </button>
-          </form>
-        </div>
+        <form onSubmit={onSubmit} className="mt-5 flex gap-2">
+          <input type="hidden" name="id" value={id} />
+          <button
+            type="button"
+            onClick={() => dialog.current?.close()}
+            className="flex-1 rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-medium dark:border-neutral-700"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={pending}
+            className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {pending ? 'Deleting…' : 'Delete'}
+          </button>
+        </form>
       </dialog>
     </>
   )
