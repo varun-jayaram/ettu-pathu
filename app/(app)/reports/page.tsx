@@ -6,12 +6,13 @@ import {
   getRecentPeriods,
   getWallets,
 } from '@/lib/queries'
-import { formatEur, isSpend, sumCents } from '@/lib/money'
+import { formatEur, sumCents } from '@/lib/money'
 import { CycleColumns, GroupBars, VizStyles } from '@/components/charts'
 
 /**
- * Reports. Everything here is scoped to the pay cycle, and every total
- * excludes transfers — a €500 savings month is not a €500 blowout.
+ * Reports. Everything is scoped to the pay cycle, and every euro that leaves
+ * counts — savings included. Spending is split by whether a recurring rule
+ * created the row, not by any label on the category's group.
  */
 export default async function ReportsPage({
   searchParams,
@@ -34,15 +35,15 @@ export default async function ReportsPage({
   const inCycle = allExpenses.filter(
     (e) => e.spent_on >= period.from && e.spent_on <= period.to,
   )
-  const spend = inCycle.filter((e) => isSpend(e.categories.category_groups.kind))
-  const transfers = inCycle.filter((e) => !isSpend(e.categories.category_groups.kind))
+  const spend = inCycle
+  const recurring = inCycle.filter((e) => e.recurring_rule_id)
 
   const spendCents = sumCents(spend)
   const incomeCents = sumCents(
     allIncome.filter((i) => i.received_on >= period.from && i.received_on <= period.to),
   )
   const netCents = incomeCents - spendCents
-  const savedCents = sumCents(transfers)
+  const recurringCents = sumCents(recurring)
 
   // --- Where it went, by group -----------------------------------------------
   const byGroup = new Map<string, { label: string; cents: number }>()
@@ -81,10 +82,7 @@ export default async function ReportsPage({
     ),
     outCents: sumCents(
       allExpenses.filter(
-        (e) =>
-          e.spent_on >= cycle.from &&
-          e.spent_on <= cycle.to &&
-          isSpend(e.categories.category_groups.kind),
+        (e) => e.spent_on >= cycle.from && e.spent_on <= cycle.to,
       ),
     ),
   }))
@@ -142,7 +140,7 @@ export default async function ReportsPage({
         {!params.wallet && (
           <p className="mt-1 text-sm text-neutral-500">
             {formatEur(incomeCents)} in · {formatEur(spendCents)} out
-            {savedCents > 0 && ` · ${formatEur(savedCents)} moved to savings`}
+            {recurringCents > 0 && ` · ${formatEur(recurringCents)} of it recurring`}
           </p>
         )}
         {!params.wallet && netCents < 0 && (
@@ -156,7 +154,7 @@ export default async function ReportsPage({
         <p className="mt-4 rounded-xl border border-neutral-200 p-3 text-sm text-neutral-500 dark:border-neutral-800">
           At this rate you&apos;ll finish the cycle around{' '}
           <span className="font-medium tabular-nums">{formatEur(projected)}</span> of
-          variable and committed spend.
+          total spend.
         </p>
       )}
 
@@ -216,9 +214,9 @@ export default async function ReportsPage({
       </section>
 
       <p className="mt-8 text-xs text-neutral-500">
-        Savings and investments are transfers — money moved, not money burnt — so
-        they are excluded from every spend total above. Income is shared; personal
-        wallet spending is not, so &quot;All&quot; shows only wallets you belong to.
+        Every euro that leaves counts here, savings included. Income is shared;
+        personal wallet spending is not, so &quot;All&quot; shows only wallets you
+        belong to.
       </p>
     </>
   )

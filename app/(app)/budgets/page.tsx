@@ -13,24 +13,28 @@ import {
   getRecurringRules,
   getWallets,
 } from '@/lib/queries'
-import { formatEur, sumCents } from '@/lib/money'
+import { formatEur, sumCents, toCents } from '@/lib/money'
 import { BudgetBar } from '@/components/budget-bar'
 import { RecurringForm } from '@/components/recurring-form'
 import { ConfirmDelete } from '@/components/confirm-delete'
 import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
 
 /**
- * Budgets: per wallet, at group level, one pay cycle, no rollover.
+ * Plan — the two ways money is committed ahead of time.
  *
- * The period is the pay cycle (anchor day, snapped to real paydays), not the
- * calendar month — the household is paid around the 26th, so a calendar budget
- * reset five days after payday. See lib/period.ts.
+ *   RECURRING  it goes out every month regardless. Entered once, filled in
+ *              automatically. ANY category can be recurring.
+ *   BUDGET     a target you might miss — groceries, petrol, eating out. ANY
+ *              group or category can carry one.
  *
- * Only `variable` groups appear. Committed is contractual — a budget on rent is
- * theatre — and `transfer` is excluded from spend entirely, so neither can be
- * budgeted. See PROJECT.md § Budgets.
+ * The two are independent: a category may have both, either, or neither, and
+ * nothing is implied by which group it sits in. Groups are folders, not
+ * meanings. See PROJECT.md.
+ *
+ * The period is the pay cycle, not the calendar month — the household is paid
+ * around the 26th, so a calendar reset landed five days after payday.
  */
-export default async function BudgetsPage({
+export default async function PlanPage({
   searchParams,
 }: {
   searchParams: Promise<{ wallet?: string }>
@@ -48,24 +52,20 @@ export default async function BudgetsPage({
   ])
 
   // Default to Joint: it holds the shared costs and is the only wallet that
-  // offers recurring rules, so landing on a personal wallet hid the main
-  // feature of this page behind a click.
+  // offers recurring rules.
   const selected =
     wallets.find((w) => w.id === params.wallet) ??
     wallets.find((w) => w.kind === 'joint') ??
     wallets[0]
-  const variableGroups = groups.filter((g) => g.kind === 'variable')
 
   const walletExpenses = expenses.filter((e) => e.wallets.id === selected?.id)
   const walletRules = rules.filter((r) => r.wallet_id === selected?.id)
-  // Recurring commitments — rent, insurance, subscriptions — are shared costs,
-  // so they are only offered on the joint wallet.
-  const jointWallet = wallets.find((w) => w.kind === 'joint')
-  const showRecurring = selected?.kind === 'joint' && Boolean(jointWallet)
+  const showRecurring = selected?.kind === 'joint'
+  const recurringMonthly = sumCents(walletRules.filter((r) => r.active))
 
   return (
     <>
-      <h1 className="text-xl font-semibold tracking-tight">Budgets</h1>
+      <h1 className="text-xl font-semibold tracking-tight">Plan</h1>
       <p className="mt-1 text-sm text-neutral-500">
         {period.label} cycle · {period.daysLeft} days left, nothing carries over
       </p>
@@ -86,201 +86,152 @@ export default async function BudgetsPage({
         ))}
       </div>
 
-      {/* Answer "where is rent?" here, where the question is actually asked —
-          it used to be a footnote at the bottom that nobody reads. */}
-      {(() => {
-        const committedGroups = groups.filter((g) => g.kind === 'committed')
-        const committedActual = sumCents(
-          walletExpenses.filter((e) =>
-            committedGroups.some((g) => g.id === e.categories.category_groups.id),
-          ),
-        )
-        const committedExpected = sumCents(
-          rules.filter(
-            (r) =>
-              r.active &&
-              r.wallet_id === selected?.id &&
-              r.categories.category_groups.kind === 'committed',
-          ),
-        )
+      {/* ------------------------------ RECURRING ------------------------ */}
+      {showRecurring && (
+        <section className="mt-6 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-sm font-medium">Recurring</h2>
+            <span className="tabular-nums text-sm font-semibold">
+              {formatEur(recurringMonthly)}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-neutral-500">
+            Goes out every month whatever you do — rent, insurance, loans,
+            subscriptions, tickets, donations, savings. Entered once, then filled
+            in automatically. Any category can be recurring.
+          </p>
 
-        return (
-          <section className="mt-6 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-medium">Committed — not budgeted</h2>
-              <span className="tabular-nums text-sm font-semibold">
-                {formatEur(committedActual)}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-neutral-500">
-              Rent, insurance, Rundfunkbeitrag, subscriptions. These are
-              contractual — you can&apos;t choose to spend less, so a budget bar
-              would be theatre. They&apos;re your monthly <em>floor</em> instead.
+          {walletRules.length === 0 ? (
+            <p className="mt-3 text-xs text-neutral-500">
+              Nothing recurring yet. Add the first one below.
             </p>
-            {committedExpected > 0 && (
-              <p className="mt-2 text-xs text-neutral-500">
-                Expected from recurring rules:{' '}
-                <span className="tabular-nums font-medium">
-                  {formatEur(committedExpected)}
-                </span>
-                {committedActual !== committedExpected && (
-                  <>
-                    {' · '}
-                    <span
-                      className={
-                        committedActual > committedExpected ? 'text-amber-600' : ''
-                      }
-                    >
-                      {committedActual > committedExpected ? 'over' : 'under'} by{' '}
-                      {formatEur(Math.abs(committedActual - committedExpected))}
-                    </span>
-                  </>
-                )}
-              </p>
-            )}
+          ) : (
+            <ul className="mt-3 divide-y divide-neutral-200 dark:divide-neutral-800">
+              {walletRules.map((rule) => (
+                <li key={rule.id} className="flex items-center gap-2 py-2.5">
+                  <span aria-hidden>{rule.categories.icon ?? '↻'}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm">
+                      {rule.categories.name}
+                      {!rule.active && (
+                        <span className="ml-1.5 text-xs text-neutral-500">stopped</span>
+                      )}
+                    </p>
+                    <p className="truncate text-xs text-neutral-500">
+                      day {rule.day_of_month} · {rule.categories.category_groups.name}
+                      {rule.note ? ` · ${rule.note}` : ''}
+                    </p>
+                  </div>
+                  <span className="tabular-nums text-sm font-medium">
+                    {formatEur(toCents(rule.amount))}
+                  </span>
 
-            {/* Recurring rules live here rather than on their own tab: they ARE
-                the committed floor, so planning them anywhere else split one
-                job across two screens. Joint only. */}
-            {showRecurring && (
-            <div className="mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-800">
-              <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                Recurring — fills itself in each month
-              </h3>
-
-              {walletRules.length === 0 ? (
-                <p className="mt-2 text-xs text-neutral-500">
-                  Nothing recurring in this wallet yet. Add rent, Strom, internet,
-                  insurance, Rundfunkbeitrag, subscriptions or your donation below
-                  and the floor stops needing to be retyped.
-                </p>
-              ) : (
-                <ul className="mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">
-                  {walletRules.map((rule) => (
-                    <li key={rule.id} className="flex items-center gap-3 py-2.5">
-                      <span aria-hidden>{rule.categories.icon ?? '↻'}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm">{rule.categories.name}</p>
-                        <p className="truncate text-xs text-neutral-500">
-                          day {rule.day_of_month}
-                          {rule.active ? '' : ' · stopped'}
-                          {rule.note ? ` · ${rule.note}` : ''}
-                        </p>
-                      </div>
-                      <span className="tabular-nums text-sm font-medium">
-                        {formatEur(Math.round(Number(rule.amount) * 100))}
-                      </span>
-                      <EditDialog
-                        action={updateRecurringRule}
-                        id={rule.id}
-                        title="Edit recurring expense"
-                      >
-                        <Field label="Amount">
-                          <input
-                            name="amount"
-                            inputMode="decimal"
-                            type="text"
-                            required
-                            defaultValue={Number(rule.amount).toFixed(2)}
-                            className={fieldClass}
-                          />
-                        </Field>
-                        <Field label="Category">
-                          <select
-                            name="category_id"
-                            required
-                            defaultValue={rule.categories.id}
-                            className={fieldClass}
-                          >
-                            {groups.map((group) => (
-                              <optgroup key={group.id} label={group.name}>
-                                {group.categories.map((category) => (
-                                  <option key={category.id} value={category.id}>
-                                    {category.icon ? `${category.icon} ` : ''}
-                                    {category.name}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
-                        </Field>
-                        <Field label="Day of month">
-                          <input
-                            name="day_of_month"
-                            type="number"
-                            min={1}
-                            max={31}
-                            required
-                            defaultValue={rule.day_of_month}
-                            className={fieldClass}
-                          />
-                        </Field>
-                        <Field label="Note">
-                          <input
-                            name="note"
-                            type="text"
-                            defaultValue={rule.note ?? ''}
-                            className={fieldClass}
-                          />
-                        </Field>
-                      </EditDialog>
-                      <form action={toggleRecurringRule}>
-                        <input type="hidden" name="id" value={rule.id} />
-                        <input
-                          type="hidden"
-                          name="active"
-                          value={String(rule.active)}
-                        />
-                        <button
-                          type="submit"
-                          className="rounded-lg border border-neutral-300 px-2 py-1 text-xs text-neutral-500 dark:border-neutral-700"
-                        >
-                          {rule.active ? 'Stop' : 'Resume'}
-                        </button>
-                      </form>
-                      <ConfirmDelete
-                        action={deleteRecurringRule}
-                        id={rule.id}
-                        title={rule.categories.name}
-                        detail={`Recurring, day ${rule.day_of_month}${
-                          rule.note ? ` · ${rule.note}` : ''
-                        } — expenses already created are kept`}
-                        amount={formatEur(Math.round(Number(rule.amount) * 100))}
+                  <EditDialog
+                    action={updateRecurringRule}
+                    id={rule.id}
+                    title="Edit recurring expense"
+                  >
+                    <Field label="Amount">
+                      <input
+                        name="amount"
+                        inputMode="decimal"
+                        type="text"
+                        required
+                        defaultValue={Number(rule.amount).toFixed(2)}
+                        className={fieldClass}
                       />
-                    </li>
-                  ))}
-                </ul>
-              )}
+                    </Field>
+                    <Field label="Category">
+                      <select
+                        name="category_id"
+                        required
+                        defaultValue={rule.categories.id}
+                        className={fieldClass}
+                      >
+                        {groups.map((group) => (
+                          <optgroup key={group.id} label={group.name}>
+                            {group.categories.map((category) => (
+                              <option key={category.id} value={category.id}>
+                                {category.icon ? `${category.icon} ` : ''}
+                                {category.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Day of month">
+                      <input
+                        name="day_of_month"
+                        type="number"
+                        min={1}
+                        max={31}
+                        required
+                        defaultValue={rule.day_of_month}
+                        className={fieldClass}
+                      />
+                    </Field>
+                    <Field label="Note">
+                      <input
+                        name="note"
+                        type="text"
+                        defaultValue={rule.note ?? ''}
+                        className={fieldClass}
+                      />
+                    </Field>
+                  </EditDialog>
 
-              <details className="mt-3">
-                <summary className="cursor-pointer text-xs text-neutral-500">
-                  Add a recurring expense
-                </summary>
-                <div className="mt-3">
-                  <RecurringForm groups={groups} walletId={jointWallet!.id} />
-                </div>
-              </details>
+                  <form action={toggleRecurringRule}>
+                    <input type="hidden" name="id" value={rule.id} />
+                    <input type="hidden" name="active" value={String(rule.active)} />
+                    <button
+                      type="submit"
+                      className="rounded-lg border border-neutral-300 px-2 py-1 text-xs text-neutral-500 dark:border-neutral-700"
+                    >
+                      {rule.active ? 'Stop' : 'Resume'}
+                    </button>
+                  </form>
+
+                  <ConfirmDelete
+                    action={deleteRecurringRule}
+                    id={rule.id}
+                    title={rule.categories.name}
+                    detail={`Recurring, day ${rule.day_of_month} — expenses already created are kept`}
+                    amount={formatEur(toCents(rule.amount))}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <details className="mt-3">
+            <summary className="cursor-pointer text-xs text-neutral-500">
+              Add a recurring expense
+            </summary>
+            <div className="mt-3">
+              <RecurringForm groups={groups} walletId={selected!.id} />
             </div>
-            )}
-          </section>
-        )
-      })()}
+          </details>
+        </section>
+      )}
 
-      <h2 className="mt-8 text-sm font-medium">Budgeted — variable spending</h2>
+      {/* ------------------------------- BUDGETS ------------------------- */}
+      <h2 className="mt-8 text-sm font-medium">Budgets</h2>
       <p className="mt-1 text-xs text-neutral-500">
-        The spend you can actually move. Savings and investments are transfers, so
-        they never consume a budget.
+        What you&apos;d ideally spend, knowing you might not — groceries, petrol,
+        eating out, films. Set one on a whole group, on a single category, or
+        both. Leave a group blank if it doesn&apos;t need one.
       </p>
 
       <div className="mt-4 space-y-8">
-        {variableGroups.map((group) => {
+        {groups.map((group) => {
           const groupSpend = sumCents(
             walletExpenses.filter((e) => e.categories.category_groups.id === group.id),
           )
           const groupBudget = budgets.find(
             (b) => b.wallet_id === selected?.id && b.group_id === group.id,
           )
-          const groupBudgetCents = groupBudget ? Math.round(Number(groupBudget.amount) * 100) : 0
+          const groupBudgetCents = groupBudget ? toCents(groupBudget.amount) : 0
 
           return (
             <section key={group.id}>
@@ -316,24 +267,22 @@ export default async function BudgetsPage({
                 >
                   Save
                 </button>
-              </form>
-              {groupBudget && (
-                <div className="mt-1 flex justify-end">
+                {groupBudget && (
                   <ConfirmDelete
                     action={deleteBudget}
                     id={groupBudget.id}
                     title={`${group.name} budget`}
-                    detail={`${selected?.name} · this removes the budget, not the spending`}
+                    detail={`${selected?.name} · removes the budget, not the spending`}
                     amount={formatEur(groupBudgetCents)}
                   />
-                </div>
-              )}
+                )}
+              </form>
 
-              {/* Category sub-limits: tripwires inside the group, never a
-                  second definition of "over". */}
+              {/* Sub-limits are tripwires inside the group, never a second
+                  definition of "over". */}
               <details className="mt-3">
                 <summary className="cursor-pointer text-xs text-neutral-500">
-                  Category sub-limits (warn only)
+                  Per-category limits (warn only)
                 </summary>
                 <div className="mt-3 space-y-3">
                   {group.categories.map((category) => {
@@ -341,9 +290,10 @@ export default async function BudgetsPage({
                       walletExpenses.filter((e) => e.categories.id === category.id),
                     )
                     const catBudget = budgets.find(
-                      (b) => b.wallet_id === selected?.id && b.category_id === category.id,
+                      (b) =>
+                        b.wallet_id === selected?.id && b.category_id === category.id,
                     )
-                    const catCents = catBudget ? Math.round(Number(catBudget.amount) * 100) : 0
+                    const catCents = catBudget ? toCents(catBudget.amount) : 0
 
                     return (
                       <div key={category.id}>
@@ -356,7 +306,11 @@ export default async function BudgetsPage({
                           />
                         )}
                         <form action={setBudget} className="mt-1 flex gap-2 pl-4">
-                          <input type="hidden" name="wallet_id" value={selected?.id ?? ''} />
+                          <input
+                            type="hidden"
+                            name="wallet_id"
+                            value={selected?.id ?? ''}
+                          />
                           <input type="hidden" name="category_id" value={category.id} />
                           <span className="flex-1 self-center truncate text-xs text-neutral-500">
                             {category.icon} {category.name}
@@ -366,7 +320,9 @@ export default async function BudgetsPage({
                             inputMode="decimal"
                             type="text"
                             placeholder="—"
-                            defaultValue={catBudget ? Number(catBudget.amount).toFixed(2) : ''}
+                            defaultValue={
+                              catBudget ? Number(catBudget.amount).toFixed(2) : ''
+                            }
                             className="w-24 rounded-lg border border-neutral-300 bg-transparent px-2 py-1.5 text-xs dark:border-neutral-700"
                           />
                           <button
@@ -379,7 +335,7 @@ export default async function BudgetsPage({
                             <ConfirmDelete
                               action={deleteBudget}
                               id={catBudget.id}
-                              title={`${category.name} sub-limit`}
+                              title={`${category.name} limit`}
                               detail={`${selected?.name} · removes the limit, not the spending`}
                               amount={formatEur(catCents)}
                             />
@@ -396,8 +352,10 @@ export default async function BudgetsPage({
       </div>
 
       <p className="mt-10 text-xs text-neutral-500">
-        Clear a budget with the × beside it, or by emptying the box and saving.
-        Deleting a budget never touches the expenses it was measuring.
+        Recurring and budgets are independent — a category can have both, and a
+        recurring amount counts towards its category&apos;s budget like any other
+        spending. Clear a budget with the × beside it; deleting a budget never
+        touches the expenses it was measuring.
       </p>
     </>
   )

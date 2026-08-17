@@ -16,7 +16,6 @@ export type Wallet = {
 export type CategoryGroup = {
   id: string
   name: string
-  kind: 'committed' | 'variable' | 'transfer'
   sort_order: number
   categories: { id: string; name: string; icon: string | null; sort_order: number }[]
 }
@@ -32,7 +31,7 @@ export type ExpenseRow = {
     id: string
     name: string
     icon: string | null
-    category_groups: { id: string; name: string; kind: string }
+    category_groups: { id: string; name: string }
   }
 }
 
@@ -52,7 +51,7 @@ export async function getCategoryGroups(): Promise<CategoryGroup[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('category_groups')
-    .select('id, name, kind, sort_order, categories(id, name, icon, sort_order, active)')
+    .select('id, name, sort_order, categories(id, name, icon, sort_order, active)')
     .eq('active', true)
     .order('sort_order')
 
@@ -67,7 +66,7 @@ export async function getCategoryGroups(): Promise<CategoryGroup[]> {
 const EXPENSE_SELECT = `
   id, amount, spent_on, note, recurring_rule_id,
   wallets!inner(id, name, kind),
-  categories!inner(id, name, icon, category_groups!inner(id, name, kind))
+  categories!inner(id, name, icon, category_groups!inner(id, name))
 `
 
 export async function getExpenses(options: {
@@ -143,7 +142,7 @@ export type RecurringRule = {
     id: string
     name: string
     icon: string | null
-    category_groups: { id: string; name: string; kind: string }
+    category_groups: { id: string; name: string }
   }
 }
 
@@ -156,7 +155,7 @@ export async function getRecurringRules(): Promise<RecurringRule[]> {
       `id, wallet_id, amount, note, day_of_month, start_date, end_date, active,
        last_generated_on,
        wallets!inner(id, name),
-       categories!inner(id, name, icon, category_groups!inner(id, name, kind))`,
+       categories!inner(id, name, icon, category_groups!inner(id, name))`,
     )
     .order('active', { ascending: false })
     .order('day_of_month')

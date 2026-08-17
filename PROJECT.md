@@ -86,121 +86,62 @@ other's personal spend.
 
 ---
 
-## Categories: two levels, and why
+## The model: Recurring and Budget
 
-**Groups carry the meaning, categories carry the detail.** You budget and read
-reports at the group level; you search and tag at the category level.
+Money committed ahead of time comes in exactly two forms, and they are
+independent:
 
-`kind` lives on the **group, not the category**, so the fixed-vs-variable split
-is declared once and cannot drift between two categories that mean the same
-thing.
+| | What it means | Example |
+|---|---|---|
+| **Recurring** | It goes out every month regardless | Rent, insurance, loans, subscriptions, Deutschlandticket, donation, savings |
+| **Budget** | A target you might miss | Groceries, petrol, eating out, films |
 
-| `kind` | Meaning | Budgeted? | In spend totals? |
-|---|---|---|---|
-| `committed` | The monthly floor — contractual | No | Yes |
-| `variable` | The only spend worth budgeting | Yes | Yes |
-| `transfer` | Money moved, not money burnt | No | **No** |
+**Any category can be either, both, or neither.** A category with a recurring
+rule *and* a budget is fine — the recurring amount simply counts towards the
+budget like any other spending.
 
-- **`committed` is your monthly floor.** Summed, it is the number you must earn
-  before anything else — the left-hand side of the proverb. A budget on rent is
-  theatre, so it is shown as a floor, not a bar you can beat.
-- **`variable` is the only spend worth budgeting.** A budget on dining out
-  changes behaviour. The dashboard leads with variable spend for that reason.
-- **`transfer` keeps savings out of spend.** Otherwise a good savings month reads
-  as a blowout. This exclusion lives in **one shared query helper**
-  (`kind <> 'transfer'`), never repeated per report — if you add a report, use
-  the helper.
+### What this replaced, and why
 
-### Family support is split across two groups, deliberately
+The first version put a `kind` column on `category_groups` —
+`committed` / `variable` / `transfer` — and made it carry three jobs at once:
+what could be budgeted, how Home was split, and what counted as spending.
 
-The regular monthly transfer to India is a fixed commitment and belongs in the
-floor, so it sits in **Committed** with a recurring rule filling it in. Occasional
-or emergency help is not predictable, so it sits in **Personal** as *Family
-support — extra*.
+**That axis was wrong, and it produced a visibly wrong number.** A cost is
+fixed because it *recurs*, not because someone filed it under a group labelled
+"Committed". Deutschlandticket, Netflix, Prime and a bank fee all landed in
+`variable` groups purely because Transport sits under Essentials and
+Entertainment under Lifestyle — so Home reported €141,89 of "variable" spending
+that was in fact four fixed monthly charges nobody could choose to reduce.
 
-These are **two separate categories, not one category in two groups**. A category
-has exactly one `group_id`, which is precisely what guarantees group totals sum
-to the month total with nothing double-counted. The split also earns its keep in
-reports: a rising *extra* line against a flat *monthly* line is a real signal you
-would otherwise never see.
+`0011` drops the column. **Recurring-ness is now read from the data**: an
+expense is recurring if a rule created it (`recurring_rule_id is not null`).
+That cannot drift, because it is not a label anyone applies by hand.
 
-**Neither is a `transfer`** — unlike savings, this money leaves the household for
-good, so it is genuine spend.
+### Groups are folders, not meanings
 
-### Why ~25 categories
+The two-level taxonomy stays — groups exist to organise ~25 categories and to
+let one budget cover several of them. They imply nothing about how money
+behaves.
 
-Past roughly this size, people stop categorising honestly at the moment of entry,
-and an entry you cannot file is an entry you do not make. **Misc is deliberate,
-not a failure** — a Misc that grows is the signal to add a category.
+**~25 categories with a Misc escape hatch.** Past about this size people stop
+categorising honestly at the moment of entry, and an entry you cannot file is an
+entry you do not make. Misc is deliberate; a Misc that grows is the signal to
+add a category.
 
----
+### Everything counts as spending
 
-## The household model: income shared, spending private
-
-This is the asymmetry the whole app is built around, and it was decided
-deliberately:
-
-| | |
-|---|---|
-| **Income** | **Shared** — both see every euro coming in |
-| **Personal wallets** | **Private** — neither sees the other's spending |
-| **Joint wallet** | **Shared** — what you spend together |
-
-Money is pooled; discretion is not. `income` therefore has `using (true)`
-policies like the category taxonomy, while `expenses` stays gated on
-`is_wallet_member()`.
-
-`income.wallet_id` records *which account the money landed in* — attribution,
-not a privacy boundary. Either person may log either salary.
-
-**A design that was built and then deleted:** the first version modelled income
-as wallet-private, mirroring expenses. That forced a separate shared
-`pay_anchors` table holding only dates, so both phones could agree on the cycle
-boundary without leaking the amount. Once income became shared that table was
-pure overhead, and `0008` drops it. If income is ever made private again, that
-problem comes back — the boundary must be derivable by both users, or the same
-cycle shows different totals on each phone.
-
----
-
-## Pay-cycle periods, not calendar months
-
-The household is paid **between the 25th and 27th**. On calendar months the
-last ~5 days of every month were funded by the *next* salary, and the budget
-reset five days after payday.
-
-A period runs from an **anchor day** (default the 26th, configurable) to the
-day before the next one, and is **named for the month it ends in** — 26 Aug–25
-Sep is "September". When a salary is logged within a window (default 7 days) of
-a boundary, the boundary **snaps to the real payday**; otherwise the anchor
-stands.
-
-**Why not a literal rolling 30 days**, which is what was asked for first:
-12 × 30 = 360, so periods drift backwards ~5 days a year, eventually putting
-two period starts in one calendar month and none in another. "What did I spend
-in September" stops having an answer. The anchor keeps exactly one period per
-month, so month-over-month comparison survives.
-
-**Two traps, both covered by `tests/period.test.mjs`:**
-
-- **Clamp short months.** An anchor of the 31st must become the 28th in
-  February, not roll into March.
-- **Snap before choosing the cycle, never after.** An earlier version picked
-  the cycle from the unsnapped anchor and snapped afterwards, which could move
-  a boundary out from under today and return a period that did not contain it
-  (salary on the 24th, anchor the 26th, viewed on the 25th → "26 Jul–23 Aug").
-  Boundaries are now all computed with snapping applied, then the cycle
-  containing today is selected.
-
-Recurring rules stay **calendar**-based: rent is due on the 1st whether or not
-that falls mid-cycle. Only the reporting and budget period changed.
+Savings and investments used to be excluded from every total. That is gone, at
+the user's explicit request: one rule, no exceptions to explain. The argument
+against — that a good savings month then reads as a blowout — was put and
+declined. If it is ever reinstated, do it as an explicit flag on the category,
+not as a group label, or the same drift returns.
 
 ---
 
 ## Budgets
 
-**Per wallet, at group level, one pay cycle, no rollover.** Roughly four numbers
-per wallet — few enough that they will actually be kept current.
+**Per wallet, one pay cycle, no rollover.** Set on any group, any category, or
+both — nothing is off-limits, since no group is privileged any more.
 
 > **The rule that keeps it coherent:** a group budget defines what **"over"**
 > means. A category sub-limit only **warns** — it never creates a second,

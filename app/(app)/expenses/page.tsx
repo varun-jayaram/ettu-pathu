@@ -1,6 +1,6 @@
 import { deleteExpense, updateExpense } from '../actions'
 import { getCategoryGroups, getExpenses, getWallets, type ExpenseRow } from '@/lib/queries'
-import { formatEur, isSpend, sumCents, toCents } from '@/lib/money'
+import { formatEur, sumCents, toCents } from '@/lib/money'
 import { ConfirmDelete } from '@/components/confirm-delete'
 import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
 
@@ -20,14 +20,8 @@ export default async function ExpensesPage({
     getExpenses({ walletId: params.wallet, search: params.q, limit: 200 }),
   ])
 
-  // Transfers are money moved, not money burnt — kept out of the total but
-  // still shown in the list. See PROJECT.md § Categories.
-  const spendCents = sumCents(
-    expenses.filter((e) => isSpend(e.categories.category_groups.kind)),
-  )
-  const transferCents = sumCents(
-    expenses.filter((e) => !isSpend(e.categories.category_groups.kind)),
-  )
+  const spendCents = sumCents(expenses)
+  const recurringCents = sumCents(expenses.filter((e) => e.recurring_rule_id))
 
   const byDate = expenses.reduce<Record<string, ExpenseRow[]>>((groups, expense) => {
     ;(groups[expense.spent_on] ??= []).push(expense)
@@ -77,14 +71,14 @@ export default async function ExpensesPage({
 
       <div className="mt-4 flex gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
         <div>
-          <p className="text-xs text-neutral-500">Spend</p>
+          <p className="text-xs text-neutral-500">Total</p>
           <p className="text-lg font-semibold tabular-nums">{formatEur(spendCents)}</p>
         </div>
-        {transferCents > 0 && (
+        {recurringCents > 0 && (
           <div>
-            <p className="text-xs text-neutral-500">Transfers (excluded)</p>
+            <p className="text-xs text-neutral-500">of which recurring</p>
             <p className="text-lg font-semibold tabular-nums text-neutral-500">
-              {formatEur(transferCents)}
+              {formatEur(recurringCents)}
             </p>
           </div>
         )}
@@ -129,13 +123,7 @@ export default async function ExpensesPage({
                         {expense.note ? ` · ${expense.note}` : ''}
                       </p>
                     </div>
-                    <span
-                      className={`tabular-nums text-sm font-medium ${
-                        isSpend(expense.categories.category_groups.kind)
-                          ? ''
-                          : 'text-neutral-500'
-                      }`}
-                    >
+                    <span className="tabular-nums text-sm font-medium">
                       {formatEur(toCents(expense.amount))}
                     </span>
                     <EditDialog

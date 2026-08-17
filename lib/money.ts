@@ -29,14 +29,3 @@ export function formatEur(cents: number): string {
   }).format(cents / 100)
 }
 
-/**
- * The single definition of what counts as spending.
- *
- * `transfer` groups (savings, investments) are money moved, not money burnt —
- * excluded from every spend total and from budget consumption, or a good
- * savings month reads as a blowout. Use this helper everywhere rather than
- * repeating the rule per report.
- */
-export function isSpend(kind: string): boolean {
-  return kind !== 'transfer'
-}

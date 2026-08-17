@@ -1,0 +1,34 @@
+-- 0011_drop_group_kind.sql — remove committed / variable / transfer
+--
+-- `category_groups.kind` was doing three jobs at once:
+--
+--   1. deciding what could be budgeted (only `variable` groups)
+--   2. splitting the Home screen into "Committed" and "Variable"
+--   3. excluding `transfer` rows from every spend total
+--
+-- All three are gone, and the reason is that the axis was wrong. A cost is
+-- fixed because it RECURS, not because someone filed it under a group labelled
+-- "Committed" — and that was a label a category could be given by accident.
+-- It was: Deutschlandticket, Netflix, Prime and a bank fee all landed in
+-- `variable` groups purely because Transport sits under Essentials and
+-- Entertainment under Lifestyle, so the Home screen reported €141,89 of
+-- "variable" spending that was in fact four fixed monthly charges.
+--
+-- The model is now two independent, explicit properties:
+--
+--   RECURRING — a recurring_rule exists. It goes out every month regardless.
+--   BUDGET    — a budgets row exists. A target that may be missed.
+--
+-- Any category may have either, both, or neither. Nothing is implied by which
+-- group a category happens to sit in; groups are now only folders for
+-- organising ~25 categories and for budgeting several at once.
+--
+-- Savings and investments now count as ordinary spending, at the user's
+-- explicit request: one rule, no exceptions to explain. The "a good savings
+-- month should not look like a blowout" argument is noted and was declined.
+--
+-- The column is dropped rather than left in place: a column that no longer
+-- means anything is worse than no column, because the next person to read the
+-- schema will assume it still does.
+
+alter table category_groups drop column kind;

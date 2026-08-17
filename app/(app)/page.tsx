@@ -8,17 +8,21 @@ import {
   getWallets,
   materializeRecurring,
 } from '@/lib/queries'
-import { formatEur, isSpend, sumCents, toCents } from '@/lib/money'
+import { formatEur, sumCents, toCents } from '@/lib/money'
 import { BudgetBar } from '@/components/budget-bar'
 
 /**
- * This month at a glance. The full dashboard — budget bars, group breakdown,
- * trends — is step 9; this is the honest minimum that makes the app useful the
- * day expenses start going in.
+ * This cycle at a glance.
+ *
+ * Spending is split into RECURRING and EVERYTHING ELSE — derived from whether
+ * a recurring rule created the row, not from a label on the category's group.
+ * That is the whole point of the model: a cost is fixed because it recurs.
+ *
+ * Every euro that leaves counts as spending, savings included.
  */
 export default async function HomePage() {
-  // Fill in any due rent/subscriptions before reading totals, so the numbers
-  // are correct at the moment you look at them. Idempotent.
+  // Fill in anything due before reading totals, so the numbers are correct at
+  // the moment you look at them. Idempotent.
   await materializeRecurring()
 
   const period = await getCurrentPeriod()
@@ -32,16 +36,11 @@ export default async function HomePage() {
     getIncome({ from, to }),
   ])
 
-  const spend = expenses.filter((e) => isSpend(e.categories.category_groups.kind))
-  const committedCents = sumCents(
-    spend.filter((e) => e.categories.category_groups.kind === 'committed'),
-  )
-  const variableCents = sumCents(
-    spend.filter((e) => e.categories.category_groups.kind === 'variable'),
-  )
+  const recurringCents = sumCents(expenses.filter((e) => e.recurring_rule_id))
+  const otherCents = sumCents(expenses.filter((e) => !e.recurring_rule_id))
+  const spentCents = recurringCents + otherCents
 
   const incomeCents = sumCents(income)
-  const spentCents = committedCents + variableCents
   const leftCents = incomeCents - spentCents
 
   const shortDate = (value: string) =>
@@ -59,7 +58,7 @@ export default async function HomePage() {
         {period.snapped && ' · from your actual payday'}
       </p>
 
-      {/* Income eight, expenses ten — the whole point of the app, so it leads. */}
+      {/* Income eight, expenses ten — the point of the app, so it leads. */}
       {incomeCents > 0 && (
         <div className="mt-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <div className="flex items-baseline justify-between">
@@ -90,24 +89,23 @@ export default async function HomePage() {
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-xs text-neutral-500">Committed</p>
+          <p className="text-xs text-neutral-500">Recurring</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums">
-            {formatEur(committedCents)}
+            {formatEur(recurringCents)}
           </p>
-          <p className="mt-1 text-xs text-neutral-500">your monthly floor</p>
+          <p className="mt-1 text-xs text-neutral-500">goes out every month</p>
         </div>
         <div className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-xs text-neutral-500">Variable</p>
+          <p className="text-xs text-neutral-500">Everything else</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums">
-            {formatEur(variableCents)}
+            {formatEur(otherCents)}
           </p>
-          <p className="mt-1 text-xs text-neutral-500">the spend you can move</p>
+          <p className="mt-1 text-xs text-neutral-500">what you chose to spend</p>
         </div>
       </div>
 
-      {/* Group budgets across every wallet the user belongs to. Only group
-          budgets appear here — category sub-limits live on /budgets, since
-          they warn rather than define "over". */}
+      {/* Group budgets across every wallet the user belongs to. Category
+          sub-limits live on Plan, since they warn rather than define "over". */}
       {(() => {
         const bars = budgets
           .filter((b) => b.scope === 'group')
@@ -115,18 +113,17 @@ export default async function HomePage() {
             const group = groups.find((g) => g.id === budget.group_id)
             const wallet = wallets.find((w) => w.id === budget.wallet_id)
             if (!group || !wallet) return null
-            const spentCents = sumCents(
-              spend.filter(
-                (e) =>
-                  e.wallets.id === wallet.id &&
-                  e.categories.category_groups.id === group.id,
-              ),
-            )
             return {
               key: budget.id,
               label: `${group.name} · ${wallet.name}`,
-              spentCents,
-              budgetCents: Math.round(Number(budget.amount) * 100),
+              spentCents: sumCents(
+                expenses.filter(
+                  (e) =>
+                    e.wallets.id === wallet.id &&
+                    e.categories.category_groups.id === group.id,
+                ),
+              ),
+              budgetCents: toCents(budget.amount),
             }
           })
           .filter((bar) => bar !== null)
@@ -138,7 +135,8 @@ export default async function HomePage() {
               <Link href="/budgets" className="underline">
                 Set one
               </Link>{' '}
-              — a budget on dining out changes behaviour; one on rent is theatre.
+              — a budget is for what you might overspend: groceries, petrol,
+              eating out. Fixed costs belong in Recurring instead.
             </p>
           )
         }
@@ -162,36 +160,38 @@ export default async function HomePage() {
 
       <h2 className="mt-8 text-sm font-medium">By wallet</h2>
       <ul className="mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">
-        {wallets.map((wallet) => {
-          const walletSpend = sumCents(spend.filter((e) => e.wallets.id === wallet.id))
-          return (
-            <li key={wallet.id} className="flex items-center justify-between py-3">
-              <span className="text-sm">
-                {wallet.name}
-                <span className="ml-2 text-xs text-neutral-500">
-                  {wallet.kind === 'personal' ? 'private' : 'shared'}
-                </span>
+        {wallets.map((wallet) => (
+          <li key={wallet.id} className="flex items-center justify-between py-3">
+            <span className="text-sm">
+              {wallet.name}
+              <span className="ml-2 text-xs text-neutral-500">
+                {wallet.kind === 'personal' ? 'private' : 'shared'}
               </span>
-              <span className="tabular-nums text-sm font-medium">
-                {formatEur(walletSpend)}
-              </span>
-            </li>
-          )
-        })}
+            </span>
+            <span className="tabular-nums text-sm font-medium">
+              {formatEur(sumCents(expenses.filter((e) => e.wallets.id === wallet.id)))}
+            </span>
+          </li>
+        ))}
       </ul>
 
       <h2 className="mt-8 text-sm font-medium">Recent</h2>
       {expenses.length === 0 ? (
-        <p className="mt-3 text-sm text-neutral-500">
-          Nothing logged this cycle yet.
-        </p>
+        <p className="mt-3 text-sm text-neutral-500">Nothing logged this cycle yet.</p>
       ) : (
         <ul className="mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">
           {expenses.slice(0, 5).map((expense) => (
             <li key={expense.id} className="flex items-center gap-3 py-3">
               <span aria-hidden>{expense.categories.icon ?? '•'}</span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm">{expense.categories.name}</p>
+                <p className="truncate text-sm">
+                  {expense.categories.name}
+                  {expense.recurring_rule_id && (
+                    <span title="Recurring" className="ml-1.5 text-xs text-neutral-500">
+                      ↻
+                    </span>
+                  )}
+                </p>
                 <p className="truncate text-xs text-neutral-500">
                   {expense.wallets.name}
                   {expense.note ? ` · ${expense.note}` : ''}

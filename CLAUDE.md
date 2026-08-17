@@ -40,9 +40,12 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
 
 - **Three wallets, two logins**: Varun / Shriya / Joint. Personal wallets have one
   member, Joint has both.
-- **`category_groups.kind`** is `committed` | `variable` | `transfer` and drives
-  every report. `transfer` is excluded from all spend totals.
-- **Budgets** are per wallet at group level; category rows are advisory sub-limits.
+- **Recurring vs Budget** are the two independent ways money is committed. An
+  expense is recurring if a rule created it (`recurring_rule_id is not null`) —
+  read from the data, never a label. Any category can have either or both.
+- **Budgets** work on any group or category; group budgets define "over",
+  category rows are advisory sub-limits.
+- Category groups are **folders only** — they imply nothing about behaviour.
 
 ## Layout
 
@@ -52,7 +55,7 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
 | `app/login/` | The only unauthenticated route. There is no signup route, by design |
 | `lib/supabase/` | `client.ts` (browser), `server.ts` (RSC + actions), `proxy.ts` (session refresh) |
 | `proxy.ts` | Session refresh + route protection. **Next 16 renamed Middleware → Proxy** |
-| `supabase/migrations/` | `0001_init` schema · `0002_rls` policies · `0003_seed` taxonomy · `0004_recurring` |
+| `supabase/migrations/` | `0001_init` · `0002_rls` · `0003_seed` · `0004_recurring` · `0007` income+cycles · `0011` drops group `kind` |
 
 ## Conventions
 
