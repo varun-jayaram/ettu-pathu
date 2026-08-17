@@ -104,7 +104,7 @@ export async function getExpenses(options: {
 export type Budget = {
   id: string
   wallet_id: string
-  scope: 'group' | 'category'
+  scope: 'wallet' | 'group' | 'category'
   group_id: string | null
   category_id: string | null
   amount: string
@@ -117,6 +117,36 @@ export async function getBudgets(): Promise<Budget[]> {
     .from('budgets')
     .select('id, wallet_id, scope, group_id, category_id, amount')
   return (data ?? []) as Budget[]
+}
+
+export type WalletTotal = {
+  wallet_id: string
+  wallet_name: string
+  wallet_kind: 'personal' | 'joint'
+  spent: string
+  saved: string
+  budgeted: string
+}
+
+/**
+ * Household totals for every wallet, including ones this user is not a member
+ * of.
+ *
+ * Backed by a SECURITY DEFINER function that returns AGGREGATES ONLY — never a
+ * row. It is what lets both people see one true household total while personal
+ * spending stays private in detail. Never extend it to return categories or
+ * rows; write a new function instead. See PROJECT.md.
+ */
+export async function getHouseholdTotals(
+  from: string,
+  to: string,
+): Promise<WalletTotal[]> {
+  const supabase = await createClient()
+  const { data } = await supabase.rpc('household_wallet_totals', {
+    from_date: from,
+    to_date: to,
+  })
+  return (data ?? []) as WalletTotal[]
 }
 
 /**

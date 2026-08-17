@@ -79,10 +79,30 @@ Wallets and memberships are seeded once by the operator via the service role and
 are deliberately **not writable from the app**: there is no insert policy on
 either table, so a user cannot add themselves to a wallet.
 
-Neither person can see the other's personal expenses. This is a stated product
-decision, and it has a consequence worth remembering: **there is deliberately no
-household-wide budget**, because computing one would require exposing each
-other's personal spend.
+### Totals are shared; detail is not
+
+Neither person can see the other's personal **expenses**. They can see the
+**total**. That line was moved deliberately: with rows fully hidden, each
+phone's "Out" silently omitted whatever the other had spent, so the two devices
+disagreed about how much the household had spent — which defeats the point of a
+shared tracker.
+
+`household_wallet_totals(from, to)` is a `SECURITY DEFINER` function that
+returns per-wallet aggregates only: spent, saved, budgeted. It bypasses RLS by
+design, so it is written so a leak is structurally impossible rather than
+merely unlikely:
+
+- it returns **aggregates only** — there is no row-returning path through it
+- it takes **no filters** that could bisect a total down to a single
+  transaction (no category, no note search, no narrower date range)
+- it is granted to `authenticated` **only**, never to `anon`
+
+**If this function ever grows a category or per-row output, the private wallet
+stops being private.** Add a new function instead.
+
+What stays private: categories, notes, dates, and individual amounts. What is
+now shared: the per-wallet total and its budget progress. A total is itself
+information — this was accepted knowingly.
 
 ---
 
@@ -152,8 +172,17 @@ toggled in the app, so it cannot drift.
 
 ## Budgets
 
-**Per wallet, one pay cycle, no rollover.** Set on any group, any category, or
-both — nothing is off-limits, since no group is privileged any more.
+**Per wallet, one pay cycle, no rollover.**
+
+- **Personal wallets take a single wallet-level budget** — one number for the
+  whole wallet, no groups and no sub-limits. "My spending money is 150." There
+  is nothing to keep up to date, which is the only way a personal budget
+  survives contact with real life.
+- **The joint wallet keeps group budgets and category sub-limits**, because
+  shared costs genuinely need breaking down.
+
+`budgets.scope` is therefore one of `wallet` / `group` / `category`, and the
+CHECK constraint still guarantees exactly one target.
 
 > **The rule that keeps it coherent:** a group budget defines what **"over"**
 > means. A category sub-limit only **warns** — it never creates a second,

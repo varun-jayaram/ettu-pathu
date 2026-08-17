@@ -4,6 +4,7 @@ import {
   getCategoryGroups,
   getCurrentPeriod,
   getExpenses,
+  getHouseholdTotals,
   getIncome,
   getWallets,
   materializeRecurring,
@@ -29,21 +30,28 @@ export default async function HomePage() {
   const period = await getCurrentPeriod()
   const { from, to } = period
 
-  const [wallets, expenses, budgets, groups, income] = await Promise.all([
+  const [wallets, expenses, budgets, groups, income, totals] = await Promise.all([
     getWallets(),
     getExpenses({ from, to, limit: 500 }),
     getBudgets(),
     getCategoryGroups(),
     getIncome({ from, to }),
+    getHouseholdTotals(from, to),
   ])
 
-  // Savings is money put aside rather than consumed. It still counts in "Out"
-  // and in "Left" — putting money away is not the same as still having it —
-  // but it gets its own box, because "how much did we keep" is a different
-  // question from "how much did we spend".
-  const savingsCents = sumCents(expenses.filter((e) => e.categories.is_savings))
-  const expensesCents = sumCents(expenses.filter((e) => !e.categories.is_savings))
-  const spentCents = expensesCents + savingsCents
+  /**
+   * Totals are HOUSEHOLD-wide and come from the aggregate-only Postgres
+   * function, not from `expenses` — RLS hides the other person's personal rows,
+   * so summing what this user can read would silently understate the household
+   * and make the two phones disagree. Detail below still comes from `expenses`,
+   * which is correct: you may see the total, not the transactions.
+   *
+   * Savings still counts in Out and in Left — putting money aside is not the
+   * same as still having it — but gets its own box.
+   */
+  const spentCents = totals.reduce((t, w) => t + toCents(w.spent), 0)
+  const savingsCents = totals.reduce((t, w) => t + toCents(w.saved), 0)
+  const expensesCents = spentCents - savingsCents
 
   const incomeCents = sumCents(income)
   const leftCents = incomeCents - spentCents
@@ -199,20 +207,40 @@ export default async function HomePage() {
       })()}
 
       <h2 className="mt-8 text-sm font-medium">By wallet</h2>
+      <p className="mt-1 text-xs text-neutral-500">
+        Everyone&apos;s totals. What the other person spent it on stays private.
+      </p>
       <ul className="mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">
-        {wallets.map((wallet) => (
-          <li key={wallet.id} className="flex items-center justify-between py-3">
-            <span className="text-sm">
-              {wallet.name}
-              <span className="ml-2 text-xs text-neutral-500">
-                {wallet.kind === 'personal' ? 'private' : 'shared'}
-              </span>
-            </span>
-            <span className="tabular-nums text-sm font-medium">
-              {formatEur(sumCents(expenses.filter((e) => e.wallets.id === wallet.id)))}
-            </span>
-          </li>
-        ))}
+        {totals.map((wallet) => {
+          const mine = wallets.some((w) => w.id === wallet.wallet_id)
+          const spent = toCents(wallet.spent)
+          const budgeted = toCents(wallet.budgeted)
+          return (
+            <li key={wallet.wallet_id} className="py-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm">
+                  {wallet.wallet_name}
+                  <span className="ml-2 text-xs text-neutral-500">
+                    {wallet.wallet_kind === 'personal' ? 'private' : 'shared'}
+                    {!mine && ' · total only'}
+                  </span>
+                </span>
+                <span className="tabular-nums text-sm font-medium">
+                  {formatEur(spent)}
+                </span>
+              </div>
+              {budgeted > 0 && (
+                <div className="mt-2">
+                  <BudgetBar
+                    label={`${wallet.wallet_name} budget`}
+                    spentCents={spent}
+                    budgetCents={budgeted}
+                  />
+                </div>
+              )}
+            </li>
+          )
+        })}
       </ul>
 
       <h2 className="mt-8 text-sm font-medium">Recent</h2>

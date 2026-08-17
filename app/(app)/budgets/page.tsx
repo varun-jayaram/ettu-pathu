@@ -63,6 +63,15 @@ export default async function PlanPage({
   const walletExpenses = expenses.filter((e) => e.wallets.id === selected?.id)
   const walletRules = rules.filter((r) => r.wallet_id === selected?.id)
   const showRecurring = selected?.kind === 'joint'
+  // A personal wallet gets ONE number for the whole wallet. Groups and
+  // sub-limits are for the joint wallet, where shared costs genuinely need
+  // breaking down.
+  const isPersonal = selected?.kind === 'personal'
+  const walletBudget = budgets.find(
+    (b) => b.wallet_id === selected?.id && b.scope === 'wallet',
+  )
+  const walletBudgetCents = walletBudget ? toCents(walletBudget.amount) : 0
+  const walletSpentCents = sumCents(walletExpenses)
   const activeRules = walletRules.filter((r) => r.active)
   const recurringMonthly = sumCents(activeRules)
 
@@ -263,6 +272,69 @@ export default async function PlanPage({
       )}
 
       {/* ------------------------------- BUDGETS ------------------------- */}
+      {isPersonal ? (
+        <>
+          <h2 className="mt-8 text-sm font-medium">Budget</h2>
+          <p className="mt-1 text-xs text-neutral-500">
+            One number for the whole wallet — your spending money this cycle. No
+            categories to keep up to date.
+          </p>
+
+          <div className="mt-4">
+            {walletBudgetCents > 0 ? (
+              <BudgetBar
+                label={`${selected?.name}'s budget`}
+                spentCents={walletSpentCents}
+                budgetCents={walletBudgetCents}
+              />
+            ) : (
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-sm font-medium">{selected?.name}</span>
+                <span className="tabular-nums text-xs text-neutral-500">
+                  {formatEur(walletSpentCents)} spent · no budget
+                </span>
+              </div>
+            )}
+
+            <div className="mt-2 flex items-center gap-2">
+              <form action={setBudget} className="flex min-w-0 flex-1 gap-2">
+                <input type="hidden" name="wallet_id" value={selected?.id ?? ''} />
+                <input
+                  name="amount"
+                  inputMode="decimal"
+                  type="text"
+                  placeholder="Set a monthly budget…"
+                  defaultValue={
+                    walletBudget ? Number(walletBudget.amount).toFixed(2) : ''
+                  }
+                  className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
+                />
+                <button
+                  type="submit"
+                  className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700"
+                >
+                  Save
+                </button>
+              </form>
+              {walletBudget && (
+                <ConfirmDelete
+                  action={deleteBudget}
+                  id={walletBudget.id}
+                  title={`${selected?.name}'s budget`}
+                  detail="removes the budget, not the spending"
+                  amount={formatEur(walletBudgetCents)}
+                />
+              )}
+            </div>
+
+            <p className="mt-3 text-xs text-neutral-500">
+              The other person sees this total and how far through it you are —
+              never what you spent it on.
+            </p>
+          </div>
+        </>
+      ) : (
+        <>
       <h2 className="mt-8 text-sm font-medium">Budgets</h2>
       <p className="mt-1 text-xs text-neutral-500">
         What you&apos;d ideally spend, knowing you might not — groceries, petrol,
@@ -429,6 +501,9 @@ export default async function PlanPage({
           )
         })}
       </div>
+
+        </>
+      )}
 
       <p className="mt-10 text-xs text-neutral-500">
         Recurring and budgets are independent — a category can have both, and a

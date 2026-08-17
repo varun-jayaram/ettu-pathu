@@ -232,20 +232,23 @@ export async function setBudget(formData: FormData): Promise<void> {
   const categoryId = String(formData.get('category_id') ?? '')
   const raw = String(formData.get('amount') ?? '').replace(',', '.').trim()
 
-  if (!walletId || (!groupId && !categoryId)) return
+  if (!walletId) return
 
-  const scope = groupId ? 'group' : 'category'
-  const column = groupId ? 'group_id' : 'category_id'
-  const targetId = groupId || categoryId
+  // No group and no category means the whole wallet — how a personal budget is
+  // expressed: one number, no breakdown.
+  const scope = groupId ? 'group' : categoryId ? 'category' : 'wallet'
 
   const supabase = await createClient()
 
-  const { data: existing } = await supabase
-    .from('budgets')
-    .select('id')
-    .eq('wallet_id', walletId)
-    .eq(column, targetId)
-    .maybeSingle()
+  let lookup = supabase.from('budgets').select('id').eq('wallet_id', walletId)
+  lookup =
+    scope === 'group'
+      ? lookup.eq('group_id', groupId)
+      : scope === 'category'
+        ? lookup.eq('category_id', categoryId)
+        : lookup.eq('scope', 'wallet')
+
+  const { data: existing } = await lookup.maybeSingle()
 
   // Blank clears the budget.
   if (raw === '') {

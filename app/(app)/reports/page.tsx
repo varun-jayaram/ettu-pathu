@@ -2,11 +2,12 @@ import Link from 'next/link'
 import {
   getCurrentPeriod,
   getExpenses,
+  getHouseholdTotals,
   getIncome,
   getRecentPeriods,
   getWallets,
 } from '@/lib/queries'
-import { formatEur, sumCents } from '@/lib/money'
+import { formatEur, sumCents, toCents } from '@/lib/money'
 import { CycleColumns, GroupBars, VizStyles } from '@/components/charts'
 
 /**
@@ -27,10 +28,18 @@ export default async function ReportsPage({
   ])
 
   const span = { from: periods[0].from, to: period.to }
-  const [allExpenses, allIncome] = await Promise.all([
+  const [allExpenses, allIncome, totals, cycleTotals] = await Promise.all([
     getExpenses({ ...span, walletId: params.wallet, limit: 2000 }),
     getIncome({ ...span, limit: 500 }),
+    getHouseholdTotals(period.from, period.to),
+    Promise.all(periods.map((c) => getHouseholdTotals(c.from, c.to))),
   ])
+
+  // Wallets this user cannot read row-by-row. They appear as a single lump so
+  // the chart totals match Home, without leaking a category. See PROJECT.md.
+  const hiddenWallets = totals.filter(
+    (t) => !wallets.some((w) => w.id === t.wallet_id) && toCents(t.spent) > 0,
+  )
 
   // `view` narrows to money spent vs money kept. Savings still counts in every
   // total — this only chooses what the breakdowns are about.
@@ -46,7 +55,12 @@ export default async function ReportsPage({
   const spend = inCycle
   const recurring = inCycle.filter((e) => e.recurring_rule_id)
 
-  const spendCents = sumCents(spend)
+  // Household figure when unfiltered; only what is visible when a wallet or
+  // view filter is applied, since those are explicitly narrower questions.
+  const visibleCents = sumCents(spend)
+  const hiddenCents = hiddenWallets.reduce((t, w) => t + toCents(w.spent), 0)
+  const spendCents =
+    params.wallet || view ? visibleCents : visibleCents + hiddenCents
   const incomeCents = sumCents(
     allIncome.filter((i) => i.received_on >= period.from && i.received_on <= period.to),
   )
@@ -61,9 +75,17 @@ export default async function ReportsPage({
     entry.cents += Math.round(Number(expense.amount) * 100)
     byGroup.set(group.id, entry)
   }
-  const groupRows = [...byGroup.entries()]
-    .map(([id, value]) => ({ id, ...value }))
-    .sort((a, b) => b.cents - a.cents)
+  const groupRows = [
+    ...[...byGroup.entries()].map(([id, value]) => ({ id, ...value })),
+    // One lump row per wallet whose detail is private to the other person.
+    ...(params.wallet || view
+      ? []
+      : hiddenWallets.map((w) => ({
+          id: w.wallet_id,
+          label: `${w.wallet_name} (personal)`,
+          cents: toCents(w.spent),
+        }))),
+  ].sort((a, b) => b.cents - a.cents)
 
   // --- Top categories --------------------------------------------------------
   const byCategory = new Map<string, { label: string; cents: number; hint: string }>()
@@ -83,16 +105,20 @@ export default async function ReportsPage({
     .slice(0, 8)
 
   // --- Trend across cycles ---------------------------------------------------
-  const cycles = periods.map((cycle) => ({
+  const cycles = periods.map((cycle, index) => ({
     label: cycle.label,
     inCents: sumCents(
       allIncome.filter((i) => i.received_on >= cycle.from && i.received_on <= cycle.to),
     ),
-    outCents: sumCents(
-      allExpenses.filter(
-        (e) => e.spent_on >= cycle.from && e.spent_on <= cycle.to,
-      ),
-    ),
+    // Household-wide, so the trend matches Home rather than one person's view.
+    outCents:
+      params.wallet || view
+        ? sumCents(
+            allExpenses.filter(
+              (e) => e.spent_on >= cycle.from && e.spent_on <= cycle.to,
+            ),
+          )
+        : cycleTotals[index].reduce((t, w) => t + toCents(w.spent), 0),
   }))
 
   const dailyRate = period.daysElapsed > 0 ? spendCents / period.daysElapsed : 0
@@ -252,9 +278,9 @@ export default async function ReportsPage({
       </section>
 
       <p className="mt-8 text-xs text-neutral-500">
-        Every euro that leaves counts here, savings included. Income is shared;
-        personal wallet spending is not, so &quot;All&quot; shows only wallets you
-        belong to.
+        Every euro that leaves counts here, savings included. Income is shared.
+        A personal wallet you are not in appears as a single total — never its
+        categories, notes or individual amounts.
       </p>
     </>
   )
