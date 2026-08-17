@@ -64,6 +64,128 @@ export async function addExpense(
   redirect('/expenses?added=1')
 }
 
+/** Shared amount parsing: accepts a German comma, rejects anything else. */
+function parseAmount(raw: FormDataEntryValue | null): number | null {
+  const amount = Number(String(raw ?? '').replace(',', '.').trim())
+  return Number.isFinite(amount) && amount > 0 ? amount : null
+}
+
+export async function updateExpense(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  const amount = parseAmount(formData.get('amount'))
+  const categoryId = String(formData.get('category_id') ?? '')
+  const walletId = String(formData.get('wallet_id') ?? '')
+  const spentOn = String(formData.get('spent_on') ?? '')
+  const note = String(formData.get('note') ?? '').trim()
+
+  if (!id || amount === null || !categoryId || !walletId || !spentOn) return
+
+  const supabase = await createClient()
+  // RLS checks both the row being edited AND the wallet it is moved into, via
+  // USING and WITH CHECK — so an expense cannot be pushed into a wallet the
+  // user does not belong to.
+  await supabase
+    .from('expenses')
+    .update({
+      amount: amount.toFixed(2),
+      category_id: categoryId,
+      wallet_id: walletId,
+      spent_on: spentOn,
+      note: note || null,
+    })
+    .eq('id', id)
+
+  revalidatePath('/')
+  revalidatePath('/expenses')
+  revalidatePath('/reports')
+}
+
+export async function updateIncome(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  const amount = parseAmount(formData.get('amount'))
+  const receivedOn = String(formData.get('received_on') ?? '')
+  const source = String(formData.get('source') ?? 'salary')
+  const note = String(formData.get('note') ?? '').trim()
+
+  if (!id || amount === null || !receivedOn) return
+
+  const supabase = await createClient()
+  await supabase
+    .from('income')
+    .update({
+      amount: amount.toFixed(2),
+      received_on: receivedOn,
+      source,
+      note: note || null,
+    })
+    .eq('id', id)
+
+  revalidatePath('/')
+  revalidatePath('/income')
+  revalidatePath('/reports')
+}
+
+/**
+ * Edits a recurring rule.
+ *
+ * Only future occurrences change. Expenses already generated are ordinary rows
+ * and keep whatever they were — editing rent from 890 to 950 does not rewrite
+ * history, which is correct: you did pay 890 last month.
+ */
+export async function updateRecurringRule(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  const amount = parseAmount(formData.get('amount'))
+  const categoryId = String(formData.get('category_id') ?? '')
+  const dayOfMonth = Number(String(formData.get('day_of_month') ?? ''))
+  const note = String(formData.get('note') ?? '').trim()
+
+  if (!id || amount === null || !categoryId) return
+  if (!Number.isInteger(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) return
+
+  const supabase = await createClient()
+  await supabase
+    .from('recurring_rules')
+    .update({
+      amount: amount.toFixed(2),
+      category_id: categoryId,
+      day_of_month: dayOfMonth,
+      note: note || null,
+    })
+    .eq('id', id)
+
+  revalidatePath('/')
+  revalidatePath('/budgets')
+}
+
+/**
+ * Deletes a recurring rule outright.
+ *
+ * Distinct from Stop, which archives it. The expenses it already generated are
+ * NOT removed — expenses.recurring_rule_id is ON DELETE SET NULL, so they
+ * survive as ordinary rows and history stays intact.
+ */
+export async function deleteRecurringRule(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
+
+  const supabase = await createClient()
+  await supabase.from('recurring_rules').delete().eq('id', id)
+
+  revalidatePath('/')
+  revalidatePath('/budgets')
+}
+
+export async function deleteBudget(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
+
+  const supabase = await createClient()
+  await supabase.from('budgets').delete().eq('id', id)
+
+  revalidatePath('/')
+  revalidatePath('/budgets')
+}
+
 export async function deleteExpense(formData: FormData): Promise<void> {
   const id = String(formData.get('id') ?? '')
   if (!id) return

@@ -1,7 +1,8 @@
-import { deleteExpense } from '../actions'
-import { getExpenses, getWallets, type ExpenseRow } from '@/lib/queries'
+import { deleteExpense, updateExpense } from '../actions'
+import { getCategoryGroups, getExpenses, getWallets, type ExpenseRow } from '@/lib/queries'
 import { formatEur, isSpend, sumCents, toCents } from '@/lib/money'
 import { ConfirmDelete } from '@/components/confirm-delete'
+import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
 
 /**
  * The searchable log. Filters are plain GET parameters so a filtered view is a
@@ -13,8 +14,9 @@ export default async function ExpensesPage({
   searchParams: Promise<{ wallet?: string; q?: string; added?: string }>
 }) {
   const params = await searchParams
-  const [wallets, expenses] = await Promise.all([
+  const [wallets, groups, expenses] = await Promise.all([
     getWallets(),
+    getCategoryGroups(),
     getExpenses({ walletId: params.wallet, search: params.q, limit: 200 }),
   ])
 
@@ -136,6 +138,72 @@ export default async function ExpensesPage({
                     >
                       {formatEur(toCents(expense.amount))}
                     </span>
+                    <EditDialog
+                      action={updateExpense}
+                      id={expense.id}
+                      title="Edit expense"
+                    >
+                      <Field label="Amount">
+                        <input
+                          name="amount"
+                          inputMode="decimal"
+                          type="text"
+                          required
+                          defaultValue={Number(expense.amount).toFixed(2)}
+                          className={fieldClass}
+                        />
+                      </Field>
+                      <Field label="Category">
+                        <select
+                          name="category_id"
+                          required
+                          defaultValue={expense.categories.id}
+                          className={fieldClass}
+                        >
+                          {groups.map((group) => (
+                            <optgroup key={group.id} label={group.name}>
+                              {group.categories.map((category) => (
+                                <option key={category.id} value={category.id}>
+                                  {category.icon ? `${category.icon} ` : ''}
+                                  {category.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Wallet">
+                        <select
+                          name="wallet_id"
+                          required
+                          defaultValue={expense.wallets.id}
+                          className={fieldClass}
+                        >
+                          {wallets.map((wallet) => (
+                            <option key={wallet.id} value={wallet.id}>
+                              {wallet.name}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Date">
+                        <input
+                          name="spent_on"
+                          type="date"
+                          required
+                          defaultValue={expense.spent_on}
+                          className={fieldClass}
+                        />
+                      </Field>
+                      <Field label="Note">
+                        <input
+                          name="note"
+                          type="text"
+                          defaultValue={expense.note ?? ''}
+                          className={fieldClass}
+                        />
+                      </Field>
+                    </EditDialog>
                     <ConfirmDelete
                       action={deleteExpense}
                       id={expense.id}

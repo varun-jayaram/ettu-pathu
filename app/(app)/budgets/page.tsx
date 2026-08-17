@@ -1,4 +1,10 @@
-import { setBudget, toggleRecurringRule } from '../actions'
+import {
+  deleteBudget,
+  deleteRecurringRule,
+  setBudget,
+  toggleRecurringRule,
+  updateRecurringRule,
+} from '../actions'
 import {
   getBudgets,
   getCategoryGroups,
@@ -10,6 +16,8 @@ import {
 import { formatEur, sumCents } from '@/lib/money'
 import { BudgetBar } from '@/components/budget-bar'
 import { RecurringForm } from '@/components/recurring-form'
+import { ConfirmDelete } from '@/components/confirm-delete'
+import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
 
 /**
  * Budgets: per wallet, at group level, one pay cycle, no rollover.
@@ -162,6 +170,60 @@ export default async function BudgetsPage({
                       <span className="tabular-nums text-sm font-medium">
                         {formatEur(Math.round(Number(rule.amount) * 100))}
                       </span>
+                      <EditDialog
+                        action={updateRecurringRule}
+                        id={rule.id}
+                        title="Edit recurring expense"
+                      >
+                        <Field label="Amount">
+                          <input
+                            name="amount"
+                            inputMode="decimal"
+                            type="text"
+                            required
+                            defaultValue={Number(rule.amount).toFixed(2)}
+                            className={fieldClass}
+                          />
+                        </Field>
+                        <Field label="Category">
+                          <select
+                            name="category_id"
+                            required
+                            defaultValue={rule.categories.id}
+                            className={fieldClass}
+                          >
+                            {groups.map((group) => (
+                              <optgroup key={group.id} label={group.name}>
+                                {group.categories.map((category) => (
+                                  <option key={category.id} value={category.id}>
+                                    {category.icon ? `${category.icon} ` : ''}
+                                    {category.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Day of month">
+                          <input
+                            name="day_of_month"
+                            type="number"
+                            min={1}
+                            max={31}
+                            required
+                            defaultValue={rule.day_of_month}
+                            className={fieldClass}
+                          />
+                        </Field>
+                        <Field label="Note">
+                          <input
+                            name="note"
+                            type="text"
+                            defaultValue={rule.note ?? ''}
+                            className={fieldClass}
+                          />
+                        </Field>
+                      </EditDialog>
                       <form action={toggleRecurringRule}>
                         <input type="hidden" name="id" value={rule.id} />
                         <input
@@ -176,6 +238,15 @@ export default async function BudgetsPage({
                           {rule.active ? 'Stop' : 'Resume'}
                         </button>
                       </form>
+                      <ConfirmDelete
+                        action={deleteRecurringRule}
+                        id={rule.id}
+                        title={rule.categories.name}
+                        detail={`Recurring, day ${rule.day_of_month}${
+                          rule.note ? ` · ${rule.note}` : ''
+                        } — expenses already created are kept`}
+                        amount={formatEur(Math.round(Number(rule.amount) * 100))}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -246,6 +317,17 @@ export default async function BudgetsPage({
                   Save
                 </button>
               </form>
+              {groupBudget && (
+                <div className="mt-1 flex justify-end">
+                  <ConfirmDelete
+                    action={deleteBudget}
+                    id={groupBudget.id}
+                    title={`${group.name} budget`}
+                    detail={`${selected?.name} · this removes the budget, not the spending`}
+                    amount={formatEur(groupBudgetCents)}
+                  />
+                </div>
+              )}
 
               {/* Category sub-limits: tripwires inside the group, never a
                   second definition of "over". */}
@@ -293,6 +375,15 @@ export default async function BudgetsPage({
                           >
                             Set
                           </button>
+                          {catBudget && (
+                            <ConfirmDelete
+                              action={deleteBudget}
+                              id={catBudget.id}
+                              title={`${category.name} sub-limit`}
+                              detail={`${selected?.name} · removes the limit, not the spending`}
+                              amount={formatEur(catCents)}
+                            />
+                          )}
                         </form>
                       </div>
                     )
@@ -305,7 +396,8 @@ export default async function BudgetsPage({
       </div>
 
       <p className="mt-10 text-xs text-neutral-500">
-        Clear a budget by emptying the box and saving.
+        Clear a budget with the × beside it, or by emptying the box and saving.
+        Deleting a budget never touches the expenses it was measuring.
       </p>
     </>
   )

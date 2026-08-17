@@ -1,8 +1,9 @@
-import { deleteIncome, setAnchorDay } from '../actions'
+import { deleteIncome, setAnchorDay, updateIncome } from '../actions'
 import { getCurrentPeriod, getIncome, getSettings } from '@/lib/queries'
 import { formatEur, sumCents } from '@/lib/money'
 import { IncomeForm } from '@/components/income-form'
 import { ConfirmDelete } from '@/components/confirm-delete'
+import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
 
 /**
  * Income — the "eight annas" half of the proverb, and the thing that defines
@@ -82,6 +83,44 @@ export default async function IncomePage({
                 <span className="tabular-nums text-sm font-medium">
                   {formatEur(Math.round(Number(row.amount) * 100))}
                 </span>
+                <EditDialog action={updateIncome} id={row.id} title="Edit income">
+                  <Field label="Amount">
+                    <input
+                      name="amount"
+                      inputMode="decimal"
+                      type="text"
+                      required
+                      defaultValue={Number(row.amount).toFixed(2)}
+                      className={fieldClass}
+                    />
+                  </Field>
+                  <Field label="Source">
+                    <select name="source" defaultValue={row.source} className={fieldClass}>
+                      {['salary','bonus','freelance','interest','gift','refund','other'].map((s) => (
+                        <option key={s} value={s} className="capitalize">
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Received on">
+                    <input
+                      name="received_on"
+                      type="date"
+                      required
+                      defaultValue={row.received_on}
+                      className={fieldClass}
+                    />
+                  </Field>
+                  <Field label="Note">
+                    <input
+                      name="note"
+                      type="text"
+                      defaultValue={row.note ?? ''}
+                      className={fieldClass}
+                    />
+                  </Field>
+                </EditDialog>
                 <ConfirmDelete
                   action={deleteIncome}
                   id={row.id}
