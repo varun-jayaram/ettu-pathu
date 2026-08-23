@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react'
 import { addExpense, type FormState } from '@/app/(app)/actions'
-import type { CategoryGroup, Wallet } from '@/lib/queries'
+import type { Category, Wallet } from '@/lib/queries'
 import { DateField } from '@/components/date-field'
 
 /**
@@ -13,10 +13,10 @@ import { DateField } from '@/components/date-field'
  */
 export function ExpenseForm({
   wallets,
-  groups,
+  categories,
 }: {
   wallets: Wallet[]
-  groups: CategoryGroup[]
+  categories: Category[]
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     addExpense,
@@ -77,15 +77,11 @@ export function ExpenseForm({
         <option value="" disabled>
           Choose a category…
         </option>
-        {groups.map((group) => (
-          <optgroup key={group.id} label={group.name}>
-            {group.categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.icon ? `${category.icon} ` : ''}
-                {category.name}
-              </option>
-            ))}
-          </optgroup>
+        {categories.map((category) => (
+          <option key={category.id} value={category.id}>
+            {category.icon ? `${category.icon} ` : ''}
+            {category.name}
+          </option>
         ))}
       </select>
 

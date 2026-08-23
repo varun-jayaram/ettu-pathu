@@ -4,20 +4,17 @@ import { budgetState } from '@/lib/queries'
 /**
  * Progress against a budget.
  *
- * `advisory` renders a category sub-limit, which only ever WARNS — it never
- * says "over", because the group budget alone defines that. See
- * PROJECT.md § Budgets.
+ * Every bar is the real thing since 0014 — there is one budget level, so there
+ * is no advisory variant that has to avoid saying "over". See PROJECT.md.
  */
 export function BudgetBar({
   label,
   spentCents,
   budgetCents,
-  advisory = false,
 }: {
   label: string
   spentCents: number
   budgetCents: number
-  advisory?: boolean
 }) {
   const state = budgetState(spentCents, budgetCents)
   const percent = budgetCents > 0 ? (spentCents / budgetCents) * 100 : 0
@@ -30,12 +27,9 @@ export function BudgetBar({
   }[state]
 
   return (
-    <div className={advisory ? 'pl-4' : ''}>
+    <div>
       <div className="flex items-baseline justify-between gap-3">
-        <span className={`truncate ${advisory ? 'text-xs text-neutral-500' : 'text-sm font-medium'}`}>
-          {advisory && '↳ '}
-          {label}
-        </span>
+        <span className="truncate text-sm font-medium">{label}</span>
         <span className="shrink-0 tabular-nums text-xs text-neutral-500">
           {formatEur(spentCents)} / {formatEur(budgetCents)}
         </span>
@@ -57,11 +51,7 @@ export function BudgetBar({
 
       <p className="mt-1 text-xs text-neutral-500">
         {state === 'over' ? (
-          <span className={advisory ? 'text-amber-600' : 'text-red-600'}>
-            {advisory
-              ? `over its sub-limit by ${formatEur(-remaining)}`
-              : `over by ${formatEur(-remaining)}`}
-          </span>
+          <span className="text-red-600">over by {formatEur(-remaining)}</span>
         ) : (
           <>
             {formatEur(remaining)} left

@@ -13,7 +13,7 @@ import { CycleColumns, GroupBars, VizStyles } from '@/components/charts'
 /**
  * Reports. Everything is scoped to the pay cycle, and every euro that leaves
  * counts — savings included. Spending is split by whether a recurring rule
- * created the row, not by any label on the category's group.
+ * created the row, which is a fact about the data rather than a label.
  */
 export default async function ReportsPage({
   searchParams,
@@ -67,17 +67,23 @@ export default async function ReportsPage({
   const netCents = incomeCents - spendCents
   const recurringCents = sumCents(recurring)
 
-  // --- Where it went, by group -----------------------------------------------
-  const byGroup = new Map<string, { label: string; cents: number }>()
+  // --- Where it went, by category --------------------------------------------
+  // Once was two charts, "by group" above "top categories". With one level in
+  // the taxonomy they would be the same chart twice, so this is the only one.
+  const byCategory = new Map<string, { label: string; cents: number }>()
   for (const expense of spend) {
-    const group = expense.categories.category_groups
-    const entry = byGroup.get(group.id) ?? { label: group.name, cents: 0 }
+    const category = expense.categories
+    const entry = byCategory.get(category.id) ?? {
+      label: `${category.icon ?? ''} ${category.name}`.trim(),
+      cents: 0,
+    }
     entry.cents += Math.round(Number(expense.amount) * 100)
-    byGroup.set(group.id, entry)
+    byCategory.set(category.id, entry)
   }
-  const groupRows = [
-    ...[...byGroup.entries()].map(([id, value]) => ({ id, ...value })),
+  const categoryRows = [
+    ...[...byCategory.entries()].map(([id, value]) => ({ id, ...value })),
     // One lump row per wallet whose detail is private to the other person.
+    // Without these the bars would not add up to the household total.
     ...(params.wallet || view
       ? []
       : hiddenWallets.map((w) => ({
@@ -86,23 +92,6 @@ export default async function ReportsPage({
           cents: toCents(w.spent),
         }))),
   ].sort((a, b) => b.cents - a.cents)
-
-  // --- Top categories --------------------------------------------------------
-  const byCategory = new Map<string, { label: string; cents: number; hint: string }>()
-  for (const expense of spend) {
-    const category = expense.categories
-    const entry = byCategory.get(category.id) ?? {
-      label: `${category.icon ?? ''} ${category.name}`.trim(),
-      cents: 0,
-      hint: category.category_groups.name,
-    }
-    entry.cents += Math.round(Number(expense.amount) * 100)
-    byCategory.set(category.id, entry)
-  }
-  const categoryRows = [...byCategory.entries()]
-    .map(([id, value]) => ({ id, ...value }))
-    .sort((a, b) => b.cents - a.cents)
-    .slice(0, 8)
 
   // --- Trend across cycles ---------------------------------------------------
   const cycles = periods.map((cycle, index) => ({
@@ -224,11 +213,6 @@ export default async function ReportsPage({
 
       <section className="mt-8">
         <h2 className="text-sm font-medium">Where it went</h2>
-        <GroupBars rows={groupRows} />
-      </section>
-
-      <section className="mt-8">
-        <h2 className="text-sm font-medium">Top categories</h2>
         <GroupBars rows={categoryRows} />
       </section>
 

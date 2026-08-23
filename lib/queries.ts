@@ -13,17 +13,12 @@ export type Wallet = {
   kind: 'personal' | 'joint'
 }
 
-export type CategoryGroup = {
+export type Category = {
   id: string
   name: string
+  icon: string | null
   sort_order: number
-  categories: {
-    id: string
-    name: string
-    icon: string | null
-    sort_order: number
-    is_savings: boolean
-  }[]
+  is_savings: boolean
 }
 
 export type ExpenseRow = {
@@ -38,7 +33,6 @@ export type ExpenseRow = {
     name: string
     icon: string | null
     is_savings: boolean
-    category_groups: { id: string; name: string }
   }
 }
 
@@ -53,27 +47,25 @@ export async function getWallets(): Promise<Wallet[]> {
   return data ?? []
 }
 
-/** The shared taxonomy, active entries only, ready to render as optgroups. */
-export async function getCategoryGroups(): Promise<CategoryGroup[]> {
+/**
+ * The shared taxonomy: one flat list, active entries only. There is no second
+ * level — 0014 dropped it. A category is the only thing a budget or a recurring
+ * rule can point at. See PROJECT.md.
+ */
+export async function getCategories(): Promise<Category[]> {
   const supabase = await createClient()
   const { data } = await supabase
-    .from('category_groups')
-    .select('id, name, sort_order, categories(id, name, icon, sort_order, active, is_savings)')
+    .from('categories')
+    .select('id, name, icon, sort_order, is_savings')
     .eq('active', true)
     .order('sort_order')
-
-  return (data ?? []).map((group) => ({
-    ...group,
-    categories: (group.categories ?? [])
-      .filter((c: { active: boolean }) => c.active)
-      .sort((a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order),
-  })) as CategoryGroup[]
+  return (data ?? []) as Category[]
 }
 
 const EXPENSE_SELECT = `
   id, amount, spent_on, note, recurring_rule_id,
   wallets!inner(id, name, kind),
-  categories!inner(id, name, icon, is_savings, category_groups!inner(id, name))
+  categories!inner(id, name, icon, is_savings)
 `
 
 export async function getExpenses(options: {
@@ -104,8 +96,7 @@ export async function getExpenses(options: {
 export type Budget = {
   id: string
   wallet_id: string
-  scope: 'wallet' | 'group' | 'category'
-  group_id: string | null
+  scope: 'wallet' | 'category'
   category_id: string | null
   amount: string
 }
@@ -115,7 +106,7 @@ export async function getBudgets(): Promise<Budget[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('budgets')
-    .select('id, wallet_id, scope, group_id, category_id, amount')
+    .select('id, wallet_id, scope, category_id, amount')
   return (data ?? []) as Budget[]
 }
 
@@ -150,9 +141,9 @@ export async function getHouseholdTotals(
 }
 
 /**
- * Budget alert states. A group budget defines what "over" means; a category
- * sub-limit only warns. See PROJECT.md § Budgets — sub-limits are deliberately
- * not required to sum to the group budget.
+ * Budget alert states. Since 0014 there is exactly one level, so a category
+ * budget simply defines what "over" means — no advisory sub-limits, nothing
+ * that has to sum to something else.
  */
 export type BudgetState = 'normal' | 'approaching' | 'over'
 
@@ -179,7 +170,6 @@ export type RecurringRule = {
     id: string
     name: string
     icon: string | null
-    category_groups: { id: string; name: string }
   }
 }
 
@@ -192,7 +182,7 @@ export async function getRecurringRules(): Promise<RecurringRule[]> {
       `id, wallet_id, amount, note, day_of_month, start_date, end_date, active,
        last_generated_on,
        wallets!inner(id, name),
-       categories!inner(id, name, icon, category_groups!inner(id, name))`,
+       categories!inner(id, name, icon)`,
     )
     .order('active', { ascending: false })
     .order('day_of_month')

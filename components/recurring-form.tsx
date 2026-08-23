@@ -2,18 +2,18 @@
 
 import { useActionState } from 'react'
 import { addRecurringRule, type FormState } from '@/app/(app)/actions'
-import type { CategoryGroup } from '@/lib/queries'
+import type { Category } from '@/lib/queries'
 import { DateField } from '@/components/date-field'
 
 /**
- * Create a recurring rule. This is how the Committed floor fills itself in
- * instead of being retyped every month.
+ * Create a recurring rule — how a fixed monthly cost fills itself in instead of
+ * being retyped every month.
  */
 export function RecurringForm({
-  groups,
+  categories,
   walletId,
 }: {
-  groups: CategoryGroup[]
+  categories: Category[]
   /** Always the joint wallet — recurring commitments are shared household
    *  costs, so the form does not ask. */
   walletId: string
@@ -72,15 +72,11 @@ export function RecurringForm({
         <option value="" disabled>
           Choose a category…
         </option>
-        {groups.map((group) => (
-          <optgroup key={group.id} label={group.name}>
-            {group.categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.icon ? `${category.icon} ` : ''}
-                {category.name}
-              </option>
-            ))}
-          </optgroup>
+        {categories.map((category) => (
+          <option key={category.id} value={category.id}>
+            {category.icon ? `${category.icon} ` : ''}
+            {category.name}
+          </option>
         ))}
       </select>
 

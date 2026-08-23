@@ -1,5 +1,5 @@
 import { deleteExpense, updateExpense } from '../actions'
-import { getCategoryGroups, getExpenses, getWallets, type ExpenseRow } from '@/lib/queries'
+import { getCategories, getExpenses, getWallets, type ExpenseRow } from '@/lib/queries'
 import { formatEur, sumCents, toCents } from '@/lib/money'
 import { ConfirmDelete } from '@/components/confirm-delete'
 import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
@@ -14,9 +14,9 @@ export default async function ExpensesPage({
   searchParams: Promise<{ wallet?: string; q?: string; added?: string }>
 }) {
   const params = await searchParams
-  const [wallets, groups, expenses] = await Promise.all([
+  const [wallets, categories, expenses] = await Promise.all([
     getWallets(),
-    getCategoryGroups(),
+    getCategories(),
     getExpenses({ walletId: params.wallet, search: params.q, limit: 200 }),
   ])
 
@@ -148,15 +148,11 @@ export default async function ExpensesPage({
                           defaultValue={expense.categories.id}
                           className={fieldClass}
                         >
-                          {groups.map((group) => (
-                            <optgroup key={group.id} label={group.name}>
-                              {group.categories.map((category) => (
-                                <option key={category.id} value={category.id}>
-                                  {category.icon ? `${category.icon} ` : ''}
-                                  {category.name}
-                                </option>
-                              ))}
-                            </optgroup>
+                          {categories.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {category.icon ? `${category.icon} ` : ''}
+                              {category.name}
+                            </option>
                           ))}
                         </select>
                       </Field>

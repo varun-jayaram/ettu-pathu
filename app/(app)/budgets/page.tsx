@@ -8,7 +8,7 @@ import {
 } from '../actions'
 import {
   getBudgets,
-  getCategoryGroups,
+  getCategories,
   getCurrentPeriod,
   getExpenses,
   getRecurringRules,
@@ -25,13 +25,13 @@ import { nextOccurrence, todayIso } from '@/lib/period'
  * Plan — the two ways money is committed ahead of time.
  *
  *   RECURRING  it goes out every month regardless. Entered once, filled in
- *              automatically. ANY category can be recurring.
- *   BUDGET     a target you might miss — groceries, petrol, eating out. ANY
- *              group or category can carry one.
+ *              automatically.
+ *   BUDGET     a target you might miss — groceries, petrol, eating out.
  *
- * The two are independent: a category may have both, either, or neither, and
- * nothing is implied by which group it sits in. Groups are folders, not
- * meanings. See PROJECT.md.
+ * Both attach to a CATEGORY, and only to a category: 0014 flattened the
+ * taxonomy so there is no second level to ask about. Any category may carry
+ * either, both, or neither. The two remain independent — a recurring amount
+ * counts towards its category's budget like any other spending.
  *
  * The period is the pay cycle, not the calendar month — the household is paid
  * around the 26th, so a calendar reset landed five days after payday.
@@ -45,9 +45,9 @@ export default async function PlanPage({
   const period = await getCurrentPeriod()
   const { from, to } = period
 
-  const [wallets, groups, budgets, expenses, rules] = await Promise.all([
+  const [wallets, categories, budgets, expenses, rules] = await Promise.all([
     getWallets(),
-    getCategoryGroups(),
+    getCategories(),
     getBudgets(),
     getExpenses({ from, to, limit: 1000 }),
     getRecurringRules(),
@@ -63,8 +63,8 @@ export default async function PlanPage({
   const walletExpenses = expenses.filter((e) => e.wallets.id === selected?.id)
   const walletRules = rules.filter((r) => r.wallet_id === selected?.id)
   const showRecurring = selected?.kind === 'joint'
-  // A personal wallet gets ONE number for the whole wallet. Groups and
-  // sub-limits are for the joint wallet, where shared costs genuinely need
+  // A personal wallet gets ONE number for the whole wallet. Per-category
+  // budgets are for the joint wallet, where shared costs genuinely need
   // breaking down.
   const isPersonal = selected?.kind === 'personal'
   const walletBudget = budgets.find(
@@ -148,7 +148,7 @@ export default async function PlanPage({
                       )}
                     </p>
                     <p className="truncate text-xs text-neutral-500">
-                      day {rule.day_of_month} · {rule.categories.category_groups.name}
+                      day {rule.day_of_month}
                       {rule.note ? ` · ${rule.note}` : ''}
                     </p>
                     {rule.active &&
@@ -191,15 +191,11 @@ export default async function PlanPage({
                         defaultValue={rule.categories.id}
                         className={fieldClass}
                       >
-                        {groups.map((group) => (
-                          <optgroup key={group.id} label={group.name}>
-                            {group.categories.map((category) => (
-                              <option key={category.id} value={category.id}>
-                                {category.icon ? `${category.icon} ` : ''}
-                                {category.name}
-                              </option>
-                            ))}
-                          </optgroup>
+                        {categories.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.icon ? `${category.icon} ` : ''}
+                            {category.name}
+                          </option>
                         ))}
                       </select>
                     </Field>
@@ -265,7 +261,7 @@ export default async function PlanPage({
               Add a recurring expense
             </summary>
             <div className="mt-3">
-              <RecurringForm groups={groups} walletId={selected!.id} />
+              <RecurringForm categories={categories} walletId={selected!.id} />
             </div>
           </details>
         </section>
@@ -335,172 +331,117 @@ export default async function PlanPage({
         </>
       ) : (
         <>
-      <h2 className="mt-8 text-sm font-medium">Budgets</h2>
-      <p className="mt-1 text-xs text-neutral-500">
-        What you&apos;d ideally spend, knowing you might not — groceries, petrol,
-        eating out, films. Set one on a whole group, on a single category, or
-        both. Leave a group blank if it doesn&apos;t need one.
-      </p>
+          <h2 className="mt-8 text-sm font-medium">Budgets</h2>
+          <p className="mt-1 text-xs text-neutral-500">
+            What you&apos;d ideally spend, knowing you might not — groceries,
+            petrol, eating out, films. One number per category, and only the
+            categories you actually want to watch. Leave the rest blank.
+          </p>
 
-      <div className="mt-4 space-y-8">
-        {groups.map((group) => {
-          const groupSpend = sumCents(
-            walletExpenses.filter((e) => e.categories.category_groups.id === group.id),
-          )
-          const groupBudget = budgets.find(
-            (b) => b.wallet_id === selected?.id && b.group_id === group.id,
-          )
-          const groupBudgetCents = groupBudget ? toCents(groupBudget.amount) : 0
+          <div className="mt-4 space-y-5">
+            {categories.map((category) => {
+              const catSpend = sumCents(
+                walletExpenses.filter((e) => e.categories.id === category.id),
+              )
+              const catBudget = budgets.find(
+                (b) => b.wallet_id === selected?.id && b.category_id === category.id,
+              )
+              const catCents = catBudget ? toCents(catBudget.amount) : 0
+              // Rules on this category are why money lands here whether or not
+              // a budget exists — worth saying, since it explains a bar that
+              // fills itself in. SUMMED, not the first match: Insurance and
+              // Internet & mobile each carry three separate rules.
+              const catRules = activeRules.filter(
+                (r) => r.categories.id === category.id,
+              )
+              const catRecurringCents = sumCents(catRules)
 
-          return (
-            <section key={group.id}>
-              {groupBudgetCents > 0 ? (
-                <BudgetBar
-                  label={group.name}
-                  spentCents={groupSpend}
-                  budgetCents={groupBudgetCents}
-                />
-              ) : (
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm font-medium">{group.name}</span>
-                  <span className="tabular-nums text-xs text-neutral-500">
-                    {formatEur(groupSpend)} spent · no budget
-                  </span>
-                </div>
-              )}
+              return (
+                <section key={category.id}>
+                  {catCents > 0 ? (
+                    <BudgetBar
+                      label={`${category.icon ?? ''} ${category.name}`.trim()}
+                      spentCents={catSpend}
+                      budgetCents={catCents}
+                    />
+                  ) : (
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-sm font-medium">
+                        {category.icon} {category.name}
+                      </span>
+                      <span className="tabular-nums text-xs text-neutral-500">
+                        {formatEur(catSpend)} spent · no budget
+                      </span>
+                    </div>
+                  )}
 
-              {/* ConfirmDelete renders its own <form>, so it must be a SIBLING
-                  of this one. Nested forms are invalid HTML: the parser closes
-                  the outer form at the inner one, orphaning this Save button so
-                  it silently stops submitting. */}
-              <div className="mt-2 flex items-center gap-2">
-                <form action={setBudget} className="flex min-w-0 flex-1 gap-2">
-                  <input type="hidden" name="wallet_id" value={selected?.id ?? ''} />
-                  <input type="hidden" name="group_id" value={group.id} />
-                  <input
-                    name="amount"
-                    inputMode="decimal"
-                    type="text"
-                    placeholder="Set a monthly budget…"
-                    defaultValue={groupBudget ? Number(groupBudget.amount).toFixed(2) : ''}
-                    className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700"
-                  >
-                    Save
-                  </button>
-                </form>
-                {groupBudget && (
-                  <ConfirmDelete
-                    action={deleteBudget}
-                    id={groupBudget.id}
-                    title={`${group.name} budget`}
-                    detail={`${selected?.name} · removes the budget, not the spending`}
-                    amount={formatEur(groupBudgetCents)}
-                  />
-                )}
-              </div>
+                  {catRules.length > 0 && (
+                    <p className="mt-1 text-xs text-neutral-500">
+                      ↻ {formatEur(catRecurringCents)} of this is recurring
+                      {catRules.length > 1 && ` · ${catRules.length} rules`}
+                    </p>
+                  )}
 
-              {/* Sub-limits are tripwires inside the group, never a second
-                  definition of "over". */}
-              <details className="mt-3">
-                <summary className="cursor-pointer text-xs text-neutral-500">
-                  Per-category limits (warn only)
-                </summary>
-                <div className="mt-3 space-y-3">
-                  {group.categories.map((category) => {
-                    const catSpend = sumCents(
-                      walletExpenses.filter((e) => e.categories.id === category.id),
-                    )
-                    const catBudget = budgets.find(
-                      (b) =>
-                        b.wallet_id === selected?.id && b.category_id === category.id,
-                    )
-                    const catCents = catBudget ? toCents(catBudget.amount) : 0
+                  {/* ConfirmDelete renders its own <form>, so it must be a
+                      SIBLING of this one. Nested forms are invalid HTML: the
+                      parser closes the outer form at the inner one, orphaning
+                      this Save button so it silently stops submitting. */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <form action={setBudget} className="flex min-w-0 flex-1 gap-2">
+                      <input type="hidden" name="wallet_id" value={selected?.id ?? ''} />
+                      <input type="hidden" name="category_id" value={category.id} />
+                      <input
+                        name="amount"
+                        inputMode="decimal"
+                        type="text"
+                        placeholder="Set a monthly budget…"
+                        defaultValue={
+                          catBudget ? Number(catBudget.amount).toFixed(2) : ''
+                        }
+                        className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
+                      />
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700"
+                      >
+                        Save
+                      </button>
+                    </form>
+                    {catBudget && (
+                      <ConfirmDelete
+                        action={deleteBudget}
+                        id={catBudget.id}
+                        title={`${category.name} budget`}
+                        detail={`${selected?.name} · removes the budget, not the spending`}
+                        amount={formatEur(catCents)}
+                      />
+                    )}
+                  </div>
 
-                    return (
-                      <div key={category.id}>
-                        {catCents > 0 && (
-                          <BudgetBar
-                            label={category.name}
-                            spentCents={catSpend}
-                            budgetCents={catCents}
-                            advisory
-                          />
-                        )}
-                        <div className="mt-1 flex items-center gap-2 pl-4">
-                          <form action={setBudget} className="flex min-w-0 flex-1 gap-2">
-                            <input
-                              type="hidden"
-                              name="wallet_id"
-                              value={selected?.id ?? ''}
-                            />
-                            <input
-                              type="hidden"
-                              name="category_id"
-                              value={category.id}
-                            />
-                            <span className="flex-1 self-center truncate text-xs text-neutral-500">
-                              {category.icon} {category.name}
-                            </span>
-                            <input
-                              name="amount"
-                              inputMode="decimal"
-                              type="text"
-                              placeholder="—"
-                              defaultValue={
-                                catBudget ? Number(catBudget.amount).toFixed(2) : ''
-                              }
-                              className="w-24 rounded-lg border border-neutral-300 bg-transparent px-2 py-1.5 text-xs dark:border-neutral-700"
-                            />
-                            <button
-                              type="submit"
-                              className="rounded-lg border border-neutral-300 px-2 py-1.5 text-xs dark:border-neutral-700"
-                            >
-                              Set
-                            </button>
-                          </form>
-                          {catBudget && (
-                            <ConfirmDelete
-                              action={deleteBudget}
-                              id={catBudget.id}
-                              title={`${category.name} limit`}
-                              detail={`${selected?.name} · removes the limit, not the spending`}
-                              amount={formatEur(catCents)}
-                            />
-                          )}
-                        </div>
-                        {/* Which Home box this category lands in. Purely a
-                            display split — savings still counts as spending. */}
-                        <form action={toggleCategorySavings} className="mt-1 pl-4">
-                          <input type="hidden" name="id" value={category.id} />
-                          <input
-                            type="hidden"
-                            name="is_savings"
-                            value={String(category.is_savings)}
-                          />
-                          <button
-                            type="submit"
-                            className={`text-xs ${
-                              category.is_savings
-                                ? 'text-neutral-900 dark:text-white'
-                                : 'text-neutral-400'
-                            }`}
-                          >
-                            {category.is_savings ? '☑' : '☐'} counts as savings
-                          </button>
-                        </form>
-                      </div>
-                    )
-                  })}
-                </div>
-              </details>
-            </section>
-          )
-        })}
-      </div>
+                  {/* Which Home box this category lands in. Purely a display
+                      split — savings still counts as spending. */}
+                  <form action={toggleCategorySavings} className="mt-1">
+                    <input type="hidden" name="id" value={category.id} />
+                    <input
+                      type="hidden"
+                      name="is_savings"
+                      value={String(category.is_savings)}
+                    />
+                    <button
+                      type="submit"
+                      className={`text-xs ${
+                        category.is_savings
+                          ? 'text-neutral-900 dark:text-white'
+                          : 'text-neutral-400'
+                      }`}
+                    >
+                      {category.is_savings ? '☑' : '☐'} counts as savings
+                    </button>
+                  </form>
+                </section>
+              )
+            })}
+          </div>
 
         </>
       )}

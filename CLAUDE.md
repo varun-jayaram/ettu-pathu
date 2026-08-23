@@ -33,9 +33,9 @@ Environment — copy `.env.example` to `.env.local`:
 
 ```
 wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy design
-         ├─ expenses ──────── categories ── category_groups (folders)
+         ├─ expenses ──────── categories
          ├─ recurring_rules ─ categories
-         └─ budgets ───────── category_groups | categories
+         └─ budgets ───────── categories | (whole wallet)
 ```
 
 - **Three wallets, two logins**: Varun / Shriya / Joint. Personal wallets have one
@@ -43,9 +43,10 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
 - **Recurring vs Budget** are the two independent ways money is committed. An
   expense is recurring if a rule created it (`recurring_rule_id is not null`) —
   read from the data, never a label. Any category can have either or both.
-- **Budgets** work on any group or category; group budgets define "over",
-  category rows are advisory sub-limits.
-- Category groups are **folders only** — they imply nothing about behaviour.
+- **One flat list of ~25 categories.** `0014` dropped `category_groups`; there is
+  no second level. Both recurring rules and budgets attach to a category.
+- **Budgets** are per category and define "over". Personal wallets instead take
+  one `scope = 'wallet'` budget — a single number, no breakdown.
 
 ## Layout
 
@@ -55,7 +56,7 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
 | `app/login/` | The only unauthenticated route. There is no signup route, by design |
 | `lib/supabase/` | `client.ts` (browser), `server.ts` (RSC + actions), `proxy.ts` (session refresh) |
 | `proxy.ts` | Session refresh + route protection. **Next 16 renamed Middleware → Proxy** |
-| `supabase/migrations/` | `0001_init` · `0002_rls` · `0003_seed` · `0004_recurring` · `0007` income+cycles · `0011` drops group `kind` |
+| `supabase/migrations/` | `0001_init` · `0002_rls` · `0003_seed` · `0004_recurring` · `0007` income+cycles · `0011` drops group `kind` · `0014` drops groups entirely |
 
 ## Conventions
 

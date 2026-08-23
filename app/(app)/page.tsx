@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import {
   getBudgets,
-  getCategoryGroups,
+  getCategories,
   getCurrentPeriod,
   getExpenses,
   getHouseholdTotals,
@@ -30,11 +30,11 @@ export default async function HomePage() {
   const period = await getCurrentPeriod()
   const { from, to } = period
 
-  const [wallets, expenses, budgets, groups, income, totals] = await Promise.all([
+  const [wallets, expenses, budgets, categories, income, totals] = await Promise.all([
     getWallets(),
     getExpenses({ from, to, limit: 500 }),
     getBudgets(),
-    getCategoryGroups(),
+    getCategories(),
     getIncome({ from, to }),
     getHouseholdTotals(from, to),
   ])
@@ -123,27 +123,25 @@ export default async function HomePage() {
         </Link>
       </div>
 
-      {/* Grouped by how they are doing, so "where am I over?" is answered
-          without reading every bar. Category sub-limits stay on Plan — they
-          warn rather than define "over". */}
+      {/* Sorted by how they are doing, so "where am I over?" is answered
+          without reading every bar. One level only — a category budget is the
+          budget, and there is nothing advisory left to explain. */}
       {(() => {
         const bars = budgets
-          .filter((b) => b.scope === 'group')
+          .filter((b) => b.scope === 'category')
           .map((budget) => {
-            const group = groups.find((g) => g.id === budget.group_id)
+            const category = categories.find((c) => c.id === budget.category_id)
             const wallet = wallets.find((w) => w.id === budget.wallet_id)
-            if (!group || !wallet) return null
+            if (!category || !wallet) return null
             const spentCents = sumCents(
               expenses.filter(
-                (e) =>
-                  e.wallets.id === wallet.id &&
-                  e.categories.category_groups.id === group.id,
+                (e) => e.wallets.id === wallet.id && e.categories.id === category.id,
               ),
             )
             const budgetCents = toCents(budget.amount)
             return {
               key: budget.id,
-              label: `${group.name} · ${wallet.name}`,
+              label: `${category.icon ?? ''} ${category.name} · ${wallet.name}`.trim(),
               spentCents,
               budgetCents,
               state: budgetState(spentCents, budgetCents),

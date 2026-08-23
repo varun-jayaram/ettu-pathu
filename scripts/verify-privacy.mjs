@@ -147,7 +147,7 @@ check(
   `HTTP ${intrusion.status}`,
 )
 
-// --- Transfers excluded from spend, and money is exact ----------------------
+// --- Savings counts as spending, and money is exact -------------------------
 await rest('expenses', varun, {
   method: 'POST',
   body: JSON.stringify({
@@ -171,11 +171,8 @@ for (let i = 0; i < 3; i++) {
   })
 }
 
-const withKind = (
-  await rest(
-    `expenses?select=amount,note,categories(category_groups(kind))&note=like.${NOTE}*`,
-    varun,
-  )
+const probes = (
+  await rest(`expenses?select=amount,note,categories(name)&note=like.${NOTE}*`, varun)
 ).body
 
 /**
@@ -191,16 +188,17 @@ const withKind = (
 const toCents = (amount) => Math.round(Number(amount) * 100)
 const sumCents = (rows) => rows.reduce((total, e) => total + toCents(e.amount), 0)
 
-const spend = sumCents(
-  withKind.filter((e) => e.categories.category_groups.kind !== 'transfer'),
-)
-const cents = sumCents(withKind.filter((e) => e.note === `${NOTE}-cent`))
+const spend = sumCents(probes)
+const cents = sumCents(probes.filter((e) => e.note === `${NOTE}-cent`))
 
-check('€500 savings excluded from spend total', !withKind.some(
-  (e) => e.note === `${NOTE}-savings` && e.categories.category_groups.kind !== 'transfer',
-))
+// 0011 made savings ordinary spending: every euro that leaves is counted, and
+// there is no category or group that opts out. 50,00 + 20,00 + 500,00 + 0,30.
+check(
+  '€500 savings IS counted as spending',
+  probes.some((e) => e.note === `${NOTE}-savings`),
+)
 check('0.10 × 3 === 0.30 exactly', cents === 30, `got ${(cents / 100).toFixed(2)}`)
-check('Spend total excludes the transfer', spend === 7030, `€${(spend / 100).toFixed(2)}`)
+check('Spend total counts every row', spend === 57030, `€${(spend / 100).toFixed(2)}`)
 
 // --- Cleanup ----------------------------------------------------------------
 await rest(`expenses?note=like.${NOTE}*`, varun, { method: 'DELETE' })

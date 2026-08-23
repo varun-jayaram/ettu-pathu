@@ -137,11 +137,25 @@ that was in fact four fixed monthly charges nobody could choose to reduce.
 expense is recurring if a rule created it (`recurring_rule_id is not null`).
 That cannot drift, because it is not a label anyone applies by hand.
 
-### Groups are folders, not meanings
+### One flat list, no folders
 
-The two-level taxonomy stays — groups exist to organise ~25 categories and to
-let one budget cover several of them. They imply nothing about how money
-behaves.
+`0014` removes `category_groups` entirely. 0011 had already stripped the meaning
+out of it, leaving a pure folder — but a folder is not free. It forces every
+screen to answer *at which level?*, and the two answers sat next to each other
+looking like a contradiction:
+
+> Plan showed **Recurring 2.482,02** (every rule, whatever folder) directly above
+> **Committed 2.670,53 / 2.982,02** (this cycle's spend in one folder). Both
+> numbers were correct. Neither was comparable to the other. The €188,51 gap was
+> two folder-membership differences plus €482,70 of hand-entered spend.
+
+The surviving folder was still *named* "Committed" — the exact label 0011 set out
+to destroy, one heading away from the concept that replaced it.
+
+So there is now **one level**. A category may carry a recurring rule, a budget,
+both, or neither. Nothing sits above it. "Where did the money go?" and "what am I
+over on?" are answered in the same units, which is the only way the two screens
+can agree.
 
 **~25 categories with a Misc escape hatch.** Past about this size people stop
 categorising honestly at the moment of entry, and an entry you cannot file is an
@@ -175,23 +189,23 @@ toggled in the app, so it cannot drift.
 **Per wallet, one pay cycle, no rollover.**
 
 - **Personal wallets take a single wallet-level budget** — one number for the
-  whole wallet, no groups and no sub-limits. "My spending money is 150." There
-  is nothing to keep up to date, which is the only way a personal budget
-  survives contact with real life.
-- **The joint wallet keeps group budgets and category sub-limits**, because
-  shared costs genuinely need breaking down.
+  whole wallet, no breakdown. "My spending money is 150." There is nothing to
+  keep up to date, which is the only way a personal budget survives contact with
+  real life.
+- **The joint wallet takes category budgets**, because shared costs genuinely
+  need breaking down — but only one level deep.
 
-`budgets.scope` is therefore one of `wallet` / `group` / `category`, and the
-CHECK constraint still guarantees exactly one target.
+`budgets.scope` is therefore one of `wallet` / `category`, and the CHECK
+constraint guarantees exactly one target.
 
-> **The rule that keeps it coherent:** a group budget defines what **"over"**
-> means. A category sub-limit only **warns** — it never creates a second,
-> competing definition of over.
+> **The rule that keeps it coherent:** a category budget defines what **"over"**
+> means, and it is the only thing that does.
 
-This avoids the usual nested-budget mess: sub-limits are **not** required to sum
-to the group budget, so there is no reconciliation to do and no state where the
-dashboard contradicts itself. A sub-limit is a tripwire inside the group, not a
-budget in its own right.
+Before `0014` there was a second, advisory level: group budgets defined "over"
+and category sub-limits merely warned. That was one concept too many. Sub-limits
+were never required to sum to their group, so the page could show a category in
+the red inside a group that was comfortably fine — technically consistent,
+unreadable in practice. With one level there is nothing to reconcile.
 
 | Spend vs budget | State |
 |---|---|
@@ -266,8 +280,8 @@ Supabase config only, not application code.
 These worked there and are kept deliberately:
 
 - **Never delete, archive.** `active` flags rather than `DELETE`, so historical
-  expenses keep resolving their labels. Archiving a group hides its categories
-  from quick-add while leaving every past expense intact. Foreign keys to
+  expenses keep resolving their labels. Archiving a category hides it from
+  quick-add while leaving every past expense intact. Foreign keys to
   `categories` are `on delete restrict` to enforce this at the database level.
 - **Stable UUID keys, editable labels.** Renaming a category never breaks
   history — the same rule as never renaming a `habit_key`.
@@ -292,7 +306,7 @@ was.
 **The rule:** totals are computed in **SQL** (`sum(amount)`), or, where a
 running total must happen client-side, in **integer cents**
 (`Math.round(Number(amount) * 100)`) and formatted back only for display. Never
-accumulate euros as floats. Every budget bar, group total and report on the
+accumulate euros as floats. Every budget bar, category total and report on the
 dashboard depends on this.
 
 ---
@@ -319,7 +333,7 @@ therefore always correct for this repo.
 |---|---|
 | Add or rename a category | Settings UI, or `0003_seed.sql` for a fresh database. Never change a UUID. |
 | Retire a category | Set `active = false`. **Never `DELETE`** — history depends on it. |
-| Change what counts as spend | `category_groups.kind`, plus the single `kind <> 'transfer'` query helper. |
+| Change what counts as spend | Nothing to change — every expense counts. `categories.is_savings` only picks which Home box it shows in. |
 | Add a wallet | Insert into `wallets` + `wallet_members`. **No policy changes needed.** |
 | Change budget thresholds | The 80% / 100% constants — keep them in one place. |
 | Add a table | Create it, `enable row level security`, and add all four policies gated on `is_wallet_member(wallet_id)`. A table without policies is invisible; a table without RLS is public. |
