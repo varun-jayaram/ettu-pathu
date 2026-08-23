@@ -462,14 +462,52 @@ export default async function PlanPage({
                     </div>
                   )}
 
-                  {/* With a budget set, the bar already states the recurring
-                      floor; repeating it here just said the same thing twice. */}
-                  {catRules.length > 0 && catCents === 0 && (
-                    <p className="mt-1 text-xs text-neutral-500">
-                      ↻ {formatEur(catRecurringCents)} of this is recurring
-                      {catRules.length > 1 && ` · ${catRules.length} rules`}
-                      {' — any budget should be at least that.'}
-                    </p>
+                  {/* The floor, broken down where you set the budget — so
+                      "why is the minimum 89,64?" is answered in place rather
+                      than by scrolling up to the Recurring list and adding
+                      three rules together yourself.
+
+                      <details> keeps this free of client JS and keyboard
+                      operable, same as the Reports bars. */}
+                  {catRules.length > 0 && (
+                    <details className="group mt-1">
+                      <summary className="cursor-pointer list-none text-xs text-neutral-500 hover:opacity-80">
+                        ↻ {formatEur(catRecurringCents)} recurring
+                        {catRules.length > 1 && ` · ${catRules.length} rules`}
+                        {catCents === 0 && ' — any budget should be at least that'}
+                        <span className="group-open:hidden"> · show</span>
+                        <span className="hidden group-open:inline"> · hide</span>
+                      </summary>
+
+                      <ul className="mt-1 space-y-1 border-l border-neutral-200 pl-3 dark:border-neutral-800">
+                        {catRules.map((rule) => (
+                          <li
+                            key={rule.id}
+                            className="flex items-baseline justify-between gap-3"
+                          >
+                            <span className="min-w-0 truncate text-xs text-neutral-500">
+                              {rule.note ?? rule.categories.name}
+                              <span className="ml-1.5 text-neutral-400">
+                                day {rule.day_of_month}
+                              </span>
+                            </span>
+                            <span className="shrink-0 tabular-nums text-xs">
+                              {formatEur(toCents(rule.amount))}
+                            </span>
+                          </li>
+                        ))}
+                        {/* Only worth restating when there is more than one to
+                            add up. */}
+                        {catRules.length > 1 && (
+                          <li className="flex items-baseline justify-between gap-3 border-t border-neutral-200 pt-1 dark:border-neutral-800">
+                            <span className="text-xs font-medium">Total</span>
+                            <span className="shrink-0 tabular-nums text-xs font-medium">
+                              {formatEur(catRecurringCents)}
+                            </span>
+                          </li>
+                        )}
+                      </ul>
+                    </details>
                   )}
 
                   {/* ConfirmDelete renders its own <form>, so it must be a
