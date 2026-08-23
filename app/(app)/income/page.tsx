@@ -1,7 +1,13 @@
 import { deleteIncome, setPeriodStart, updateIncome } from '../actions'
 import { getActivePeriod, getIncome, getSettings } from '@/lib/queries'
 import { formatEur, sumCents } from '@/lib/money'
-import { MAX_CYCLE_DAYS, monthLabel, shiftMonthKey } from '@/lib/period'
+import {
+  MAX_CYCLE_DAYS,
+  addDays,
+  earliestStartFor,
+  monthLabel,
+  shiftMonthKey,
+} from '@/lib/period'
 import { IncomeForm } from '@/components/income-form'
 import { ConfirmDelete } from '@/components/confirm-delete'
 import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
@@ -28,12 +34,19 @@ export default async function IncomePage({
   const periodTotal = sumCents(periodIncome)
   const anchorDay = Number(settings.pay_anchor_day ?? 26)
 
-  // Mirrors the CHECK constraint in 0015: the cycle named for a month must
-  // start between the first of the previous month and the first of that one,
-  // which is what keeps it ending inside its own month.
   const nextMonth = shiftMonthKey(period.month, 1)
-  const earliestStart = shiftMonthKey(period.month, -1)
+  // Measured back from where the cycle actually ENDS, not from the last day of
+  // the month: moving a start never moves its end, so this is the real 35-day
+  // ceiling. Bounding by the month's last day instead would refuse 26 Aug for a
+  // September cycle that ends on the 25th — the normal configuration here.
+  const earliestStart = earliestStartFor(period.month, period.to)
+  // Never after the first of its own month, or the cycle would end after the
+  // month is over. This is the CHECK constraint in 0015 restated.
   const latestStart = period.month
+  // The hard ceiling on the end: 30 Sep for September, and so on. Structural
+  // rather than checked — the next cycle must start by the first of its own
+  // month, so this one ends the day before at the latest.
+  const lastDayOfMonth = addDays(nextMonth, -1)
 
   return (
     <>
@@ -192,10 +205,12 @@ export default async function IncomePage({
         </form>
 
         <p className="mt-2 text-xs text-neutral-500">
-          Ends the day before {monthLabel(nextMonth)} starts. Must begin between{' '}
-          {formatDate(earliestStart)} and {formatDate(latestStart)} so the cycle
-          ends inside {period.label}, and no cycle may run past {MAX_CYCLE_DAYS}{' '}
-          days. Change month in the header to set a different one.
+          Always ends by {formatDate(lastDayOfMonth)} — the day before{' '}
+          {monthLabel(nextMonth)} starts, so a cycle never runs past the month
+          it is named for. It may begin at most {MAX_CYCLE_DAYS} days before it
+          ends, so anywhere from {formatDate(earliestStart)} to{' '}
+          {formatDate(latestStart)}. Change month in the header to set a
+          different one.
         </p>
       </section>
     </>

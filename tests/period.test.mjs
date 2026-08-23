@@ -1,5 +1,6 @@
 import {
   MAX_CYCLE_DAYS,
+  earliestStartFor,
   getPeriod,
   getPeriodForMonth,
   monthLabel,
@@ -156,32 +157,39 @@ eq('…and says why', /must start on or before/.test(tooLate ?? ''), true)
 const tooEarly = startDateProblem('2026-09-01', '2026-07-20')
 eq('20 Jul is refused for September', tooEarly !== null, true)
 
-// 35-day ceiling, checked against both neighbours.
+// --- the 35-day ceiling, measured back from where the cycle ENDS -----------
+// A September cycle ending 25 Sep. Moving its start never moves that end.
+const endsOn = '2026-09-25'
+
+eq('the household default, 26 Aug – 25 Sep (31 days), is allowed',
+  startDateProblem('2026-09-01', '2026-08-26', { endsOn }), null)
+
+eq('exactly 35 days is allowed',
+  startDateProblem('2026-09-01', '2026-08-22', { endsOn }), null)
+
+const tooLong = startDateProblem('2026-09-01', '2026-08-21', { endsOn })
+eq('36 days is refused', tooLong !== null, true)
+eq('…and names the limit',
+  new RegExp(`cannot exceed ${MAX_CYCLE_DAYS} days`).test(tooLong ?? ''), true)
+eq('…and offers the earliest legal start',
+  /earliest start is 2026-08-22/.test(tooLong ?? ''), true)
+
+eq('earliestStartFor is 34 days before the end',
+  earliestStartFor('2026-09-01', endsOn), '2026-08-22')
+// …but never earlier than the window the CHECK constraint allows.
+eq('earliestStartFor is clamped to the window',
+  earliestStartFor('2026-09-01', '2026-09-30'), '2026-08-27')
+
+eq('a start after the cycle ends is refused',
+  startDateProblem('2026-09-01', '2026-09-01', { endsOn: '2026-08-30' }) !== null,
+  true)
+
+// Moving a start also moves the PREVIOUS cycle's end — the half that is easy
+// to miss.
 const longPrevious = startDateProblem('2026-09-01', '2026-09-01', {
   previousStart: '2026-07-20',
 })
 eq('a 43-day previous cycle is refused', longPrevious !== null, true)
-eq('…and names the limit',
-  new RegExp(`cannot exceed ${MAX_CYCLE_DAYS} days`).test(longPrevious ?? ''), true)
-
-const longThis = startDateProblem('2026-09-01', '2026-08-01', {
-  nextStart: '2026-09-26',
-})
-eq('a 56-day September is refused', longThis !== null, true)
-
-eq('a 31-day cycle is allowed',
-  startDateProblem('2026-09-01', '2026-08-26', { nextStart: '2026-09-26' }), null)
-
-// The ceiling itself, and one day past it. A payday that slips can legitimately
-// stretch a cycle past a calendar month; 36 days is a mis-keyed date.
-eq('a 35-day cycle is allowed (the ceiling exactly)',
-  startDateProblem('2026-09-01', '2026-08-22', { nextStart: '2026-09-26' }), null)
-eq('a 36-day cycle is refused',
-  startDateProblem('2026-09-01', '2026-08-21', { nextStart: '2026-09-26' }) !== null,
-  true)
-eq('starting on or after the next cycle is refused',
-  startDateProblem('2026-09-01', '2026-08-26', { nextStart: '2026-08-26' }) !== null,
-  true)
 
 console.log(failed ? `\n${failed} FAILED` : '\nAll period cases correct.')
 process.exit(failed ? 1 : 0)

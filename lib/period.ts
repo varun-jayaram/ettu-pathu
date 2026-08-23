@@ -281,17 +281,39 @@ export function monthLabel(month: ISODate): string {
 }
 
 /**
+ * The earliest a cycle named `month` may start, given where it ends.
+ *
+ * Moving a start does NOT move the end — a cycle ends the day before the NEXT
+ * one begins — so the ceiling is measured backwards from the real end rather
+ * than from the worst case. Bounding by "35 days before the last day of the
+ * month" instead would reject 26 Aug for a September cycle that actually ends
+ * on the 25th, which is the household's normal configuration.
+ *
+ * Never earlier than the first of the previous month, which is what the CHECK
+ * constraint in 0015 independently enforces.
+ */
+export function earliestStartFor(month: ISODate, endsOn: ISODate): ISODate {
+  const byLength = addDays(endsOn, -(MAX_CYCLE_DAYS - 1))
+  const byWindow = shiftMonthKey(month, -1)
+  return byLength > byWindow ? byLength : byWindow
+}
+
+/**
  * Why a proposed start date for `month` is not allowed, or null if it is.
  *
  * The two rules, in the user's words: the cycle named for a month has to end
- * before that month does, and no cycle may run longer than MAX_CYCLE_DAYS. Both are
- * checked here AND as CHECK constraints in 0015 — this function exists to
- * explain the refusal, not to be the only thing enforcing it.
+ * within that month, and it may start at most MAX_CYCLE_DAYS before it ends.
+ *
+ * The first is structural rather than checked here — a cycle ends the day
+ * before the next one starts, and the next one's own window forces it to begin
+ * no later than the first of its month, so September always ends by 30 Sep.
+ * The window bounds below are the CHECK constraint in 0015 restated; this
+ * function exists to explain a refusal, not to be the only thing enforcing it.
  */
 export function startDateProblem(
   month: ISODate,
   startsOn: ISODate,
-  neighbours: { previousStart?: ISODate; nextStart?: ISODate } = {},
+  context: { endsOn?: ISODate; previousStart?: ISODate } = {},
 ): string | null {
   const earliest = shiftMonthKey(month, -1)
   const latest = month
@@ -303,19 +325,25 @@ export function startDateProblem(
     return `Too late — ${monthLabel(month)} must start on or before ${latest}, or it would end after the month is over.`
   }
 
-  const { previousStart, nextStart } = neighbours
+  const { endsOn, previousStart } = context
 
+  if (endsOn) {
+    if (startsOn > endsOn) {
+      return `${monthLabel(month)} ends on ${endsOn}, so it cannot start after that.`
+    }
+    const days = diffDays(startsOn, endsOn) + 1
+    if (days > MAX_CYCLE_DAYS) {
+      return `That would make ${monthLabel(month)} ${days} days, ending ${endsOn}. A cycle cannot exceed ${MAX_CYCLE_DAYS} days, so the earliest start is ${earliestStartFor(month, endsOn)}.`
+    }
+  }
+
+  // Moving this start also moves the END of the previous cycle, which is the
+  // half of the change that is easy to miss.
   if (previousStart && startsOn <= previousStart) {
     return `Must be after the previous cycle starts (${previousStart}).`
   }
   if (previousStart && diffDays(previousStart, startsOn) > MAX_CYCLE_DAYS) {
     return `That would make the previous cycle ${diffDays(previousStart, startsOn)} days. A cycle cannot exceed ${MAX_CYCLE_DAYS} days.`
-  }
-  if (nextStart && startsOn >= nextStart) {
-    return `Must be before the next cycle starts (${nextStart}).`
-  }
-  if (nextStart && diffDays(startsOn, nextStart) > MAX_CYCLE_DAYS) {
-    return `That would make ${monthLabel(month)} ${diffDays(startsOn, nextStart)} days. A cycle cannot exceed ${MAX_CYCLE_DAYS} days.`
   }
 
   return null

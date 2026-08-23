@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getPeriodStarts } from '@/lib/queries'
+import { getPeriodForMonthKey } from '@/lib/queries'
 import { shiftMonthKey, startDateProblem } from '@/lib/period'
 
 /**
@@ -337,10 +337,19 @@ export async function setPeriodStart(formData: FormData): Promise<void> {
     return
   }
 
-  const starts = await getPeriodStarts()
+  // Resolved periods, not the raw overrides map: a neighbour that has never
+  // been set by hand still HAS a start, from the anchor or a logged payday, and
+  // the length rules have to be measured against that.
+  const [current, previous] = await Promise.all([
+    getPeriodForMonthKey(month),
+    getPeriodForMonthKey(shiftMonthKey(month, -1)),
+  ])
+
   const problem = startDateProblem(month, startsOn, {
-    previousStart: starts[shiftMonthKey(month, -1)],
-    nextStart: starts[shiftMonthKey(month, 1)],
+    // The end does not move when the start does — it is the day before the next
+    // cycle begins — so it is the fixed point the 35-day rule measures from.
+    endsOn: current.to,
+    previousStart: previous.from,
   })
   // The CHECK constraint in 0015 is the real guarantee; this just avoids a raw
   // Postgres error reaching the user.

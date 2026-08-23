@@ -311,11 +311,25 @@ discouraged.
 Two rules, enforced as CHECK constraints in Postgres and explained by
 `startDateProblem()` in the UI:
 
-1. **A cycle named for month M must end within M.** Enforced as: it must start
-   between the first of M−1 and the first of M.
-2. **No cycle may exceed 35 days.** Deliberately longer than a calendar
-   month: a payday that slips can stretch a cycle past 31 days without
-   anything being wrong. Past 35 it is a mis-keyed date, not a late salary.
+1. **A cycle named for month M ends within M** — September always ends by
+   30 Sep. This is **structural, not checked**: a cycle ends the day before the
+   next one begins, and the next one's own window forces it to start no later
+   than the first of its month. There is no way to express a cycle that runs
+   past its month.
+2. **A cycle may start at most 35 days before it ends.** Deliberately longer
+   than a calendar month: a payday that slips can stretch a cycle past 31 days
+   without anything being wrong. Past 35 it is a mis-keyed date, not a late
+   salary.
+
+**The ceiling is measured back from the real end, not from the month's last
+day** — `earliestStartFor(month, endsOn)`. Moving a start never moves its end,
+so the end is the fixed point. Bounding by "35 days before 30 Sep" would give
+27 Aug and reject **26 Aug**, the household's own anchor, for a September cycle
+that actually ends on the 25th. The bound is then clamped to the CHECK
+constraint's window so the two can never disagree.
+
+Moving a start also moves the **previous** cycle's end, which is the half that
+is easy to miss, so that length is checked too.
 
 **None of this touches recurring rules.** `materialize_recurring()` reads
 `recurring_rules` and the calendar; it has never read `budgets` or the pay cycle.
