@@ -213,6 +213,22 @@ unreadable in practice. With one level there is nothing to reconcile.
 | 80–100% | approaching |
 | > 100% | over |
 
+### Recurring is a category's budget floor
+
+A budget bar shows the category's recurring total as a marked floor, because
+that money leaves whether or not anything else is spent. It is **not** folded
+into "spent" — until the rule fires it has not been spent — but it is not
+available either.
+
+Without this the bar could read `0,00 € / 100,00 € · 100,00 € left` on a
+Transport budget of 100,00 carrying a 126,00 Deutschlandticket. Not merely
+optimistic: that budget was unmeetable the moment it was typed. A budget below
+its own recurring total now says so outright and names the minimum.
+
+Where there is headroom the bar reads *"474,00 € left after ↻ 126,00 €
+recurring"* rather than a bare "left", so the committed part is never counted
+as spendable.
+
 ### A budget belongs to a month
 
 Since `0015` every budget carries `period_month` — **the first of the month the

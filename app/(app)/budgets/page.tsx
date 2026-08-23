@@ -449,6 +449,7 @@ export default async function PlanPage({
                       label={`${category.icon ?? ''} ${category.name}`.trim()}
                       spentCents={catSpend}
                       budgetCents={catCents}
+                      floorCents={catRecurringCents}
                     />
                   ) : (
                     <div className="flex items-baseline justify-between gap-3">
@@ -461,10 +462,13 @@ export default async function PlanPage({
                     </div>
                   )}
 
-                  {catRules.length > 0 && (
+                  {/* With a budget set, the bar already states the recurring
+                      floor; repeating it here just said the same thing twice. */}
+                  {catRules.length > 0 && catCents === 0 && (
                     <p className="mt-1 text-xs text-neutral-500">
                       ↻ {formatEur(catRecurringCents)} of this is recurring
                       {catRules.length > 1 && ` · ${catRules.length} rules`}
+                      {' — any budget should be at least that.'}
                     </p>
                   )}
 
@@ -481,7 +485,13 @@ export default async function PlanPage({
                         name="amount"
                         inputMode="decimal"
                         type="text"
-                        placeholder="Set a monthly budget…"
+                        // The recurring floor is the smallest budget that can
+                        // actually be met, so it is the obvious starting point.
+                        placeholder={
+                          catRecurringCents > 0
+                            ? `At least ${formatEur(catRecurringCents)}`
+                            : 'Set a monthly budget…'
+                        }
                         defaultValue={
                           catBudget ? Number(catBudget.amount).toFixed(2) : ''
                         }

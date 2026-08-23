@@ -6,6 +6,7 @@ import {
   getExpenses,
   getHouseholdTotals,
   getIncome,
+  getRecurringRules,
   getWallets,
   materializeRecurring,
 } from '@/lib/queries'
@@ -33,14 +34,19 @@ export default async function HomePage() {
   const period = await getActivePeriod()
   const { from, to } = period
 
-  const [wallets, expenses, budgets, categories, income, totals] = await Promise.all([
-    getWallets(),
-    getExpenses({ from, to, limit: 500 }),
-    getBudgets(period.month),
-    getCategories(),
-    getIncome({ from, to }),
-    getHouseholdTotals(from, to, period.month),
-  ])
+  const [wallets, expenses, budgets, categories, income, totals, rules] =
+    await Promise.all([
+      getWallets(),
+      getExpenses({ from, to, limit: 500 }),
+      getBudgets(period.month),
+      getCategories(),
+      getIncome({ from, to }),
+      getHouseholdTotals(from, to, period.month),
+      // Only so each bar can show its recurring floor. Home draws the same
+      // BudgetBar as Plan and would otherwise claim headroom that is already
+      // committed.
+      getRecurringRules(),
+    ])
 
   /**
    * Totals are HOUSEHOLD-wide and come from the aggregate-only Postgres
@@ -151,11 +157,20 @@ export default async function HomePage() {
               ),
             )
             const budgetCents = toCents(budget.amount)
+            const floorCents = sumCents(
+              rules.filter(
+                (r) =>
+                  r.active &&
+                  r.wallet_id === wallet.id &&
+                  r.categories.id === category.id,
+              ),
+            )
             return {
               key: budget.id,
               label: `${category.icon ?? ''} ${category.name} · ${wallet.name}`.trim(),
               spentCents,
               budgetCents,
+              floorCents,
               state: budgetState(spentCents, budgetCents),
             }
           })
@@ -199,6 +214,7 @@ export default async function HomePage() {
                           label={bar.label}
                           spentCents={bar.spentCents}
                           budgetCents={bar.budgetCents}
+                          floorCents={bar.floorCents}
                         />
                       ))}
                     </div>
