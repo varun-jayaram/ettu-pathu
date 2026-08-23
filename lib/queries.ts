@@ -127,16 +127,6 @@ export async function getBudgets(month: string): Promise<Budget[]> {
   return (data ?? []) as Budget[]
 }
 
-/**
- * Copies the previous month's budgets into `month` if it has none yet.
- * Idempotent, so calling it before reading is safe and cheap — the same
- * contract as materializeRecurring().
- */
-export async function carryBudgetsForward(month: string): Promise<void> {
-  const supabase = await createClient()
-  await supabase.rpc('carry_budgets_forward', { target_month: month })
-}
-
 /** Hand-set cycle starts, keyed by the month the cycle is named for. */
 export async function getPeriodStarts(): Promise<PeriodStarts> {
   const supabase = await createClient()

@@ -8,7 +8,6 @@ import {
   updateRecurringRule,
 } from '../actions'
 import {
-  carryBudgetsForward,
   getBudgets,
   getCategories,
   getCurrentPeriod,
@@ -64,11 +63,9 @@ export default async function PlanPage({
   const { from, to } = period
   const isLive = month === live.month
 
-  // Fill this month in from the previous one before reading, so stepping to
-  // October shows September's numbers instead of an empty page. Idempotent —
-  // it does nothing once the month has any budget of its own.
-  await carryBudgetsForward(month)
-
+  // A month starts with NO budgets and full recurring — 0017. Recurring
+  // carries itself; a budget is a decision about one month, and pre-filling it
+  // from last month asserts a decision nobody made.
   const [wallets, categories, budgets, expenses, rules] = await Promise.all([
     getWallets(),
     getCategories(),
@@ -450,6 +447,12 @@ export default async function PlanPage({
             What you&apos;d ideally spend, knowing you might not — groceries,
             petrol, eating out, films. One number per category, and only the
             categories you actually want to watch. Leave the rest blank.
+          </p>
+          {/* Each month is set deliberately — nothing is copied from last
+              month, so an empty list means "not decided yet", never "zero". */}
+          <p className="mt-1 text-xs text-neutral-500">
+            Set for {period.label} only. Recurring above already repeats every
+            month on its own; budgets don&apos;t, so each month starts blank.
           </p>
 
           <div className="mt-4 space-y-5">

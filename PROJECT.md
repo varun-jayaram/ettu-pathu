@@ -225,14 +225,18 @@ generous without rewriting history. Plan carries a month stepper; **Home and
 Reports deliberately do not** — they always show the live cycle, so there is no
 way to be looking at October's plan while believing it is where you stand.
 
-**Carry-forward, not defaults.** Opening a month with no budgets copies the most
-recent earlier month's forward, once, into real rows — `carry_budgets_forward()`,
-idempotent, same contract as `materialize_recurring()`.
+**A new month starts with no budgets.** `0015` copied the previous month's
+forward; `0017` removed that, and the reason is the Recurring/Budget split
+again:
 
-A read-time fallback was rejected. It would have meant that editing September
-retroactively changed October everywhere October had not been touched, so
-"September is frozen" would have been a lie. Copying makes each month an
-independent record the moment you look at it.
+| | Carries itself? | Why |
+|---|---|---|
+| **Recurring** | yes | A rule isn't attached to a month at all. `materialize_recurring()` fires it every month until stopped. Nothing is copied for rent to appear in October. |
+| **Budget** | no | A budget is a decision about *one month*. Copying last month's silently asserts you made that decision again. |
+
+Pre-filled numbers nobody chose are worse than no numbers: they look
+deliberate, so they never get revisited. An empty budget list means "not
+decided yet" — never "zero".
 
 ### Cycle dates are adjustable, within two rules
 

@@ -1,0 +1,23 @@
+-- 0017_drop_budget_carry_forward.sql — a new month starts with no budgets
+--
+-- 0015 copied the previous month's budgets into a month the first time it was
+-- opened, so October would arrive pre-filled with September's numbers. In use
+-- that turned out to be the wrong default, for a reason worth writing down:
+--
+--   RECURRING already carries itself. A recurring rule is not attached to a
+--   month at all — materialize_recurring() fires it every month until stopped.
+--   Nothing has to be copied for rent to appear in October.
+--
+--   BUDGETS are the opposite. A budget is a decision about one month. Copying
+--   last month's forward silently asserts you have made that decision again,
+--   and pre-filled numbers nobody chose are worse than no numbers: they look
+--   deliberate, so they never get revisited.
+--
+-- So a month now starts empty of budgets and full of recurring, which is the
+-- honest split — the fixed things appear by themselves, the intentional ones
+-- are stated on purpose.
+--
+-- Budgets already set are untouched. period_month stays; months remain
+-- independent, and editing August still cannot reach September.
+
+drop function if exists public.carry_budgets_forward(date);
