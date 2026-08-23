@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getPeriodStarts } from '@/lib/queries'
+import { shiftMonthKey, startDateProblem } from '@/lib/period'
 
 /**
  * Writes. Each of these relies on RLS to reject anything the user should not
@@ -229,9 +231,10 @@ export async function deleteExpense(formData: FormData): Promise<void> {
 export async function setBudget(formData: FormData): Promise<void> {
   const walletId = String(formData.get('wallet_id') ?? '')
   const categoryId = String(formData.get('category_id') ?? '')
+  const month = String(formData.get('period_month') ?? '')
   const raw = String(formData.get('amount') ?? '').replace(',', '.').trim()
 
-  if (!walletId) return
+  if (!walletId || !month) return
 
   // No category means the whole wallet — how a personal budget is expressed:
   // one number, no breakdown.
@@ -239,7 +242,11 @@ export async function setBudget(formData: FormData): Promise<void> {
 
   const supabase = await createClient()
 
-  let lookup = supabase.from('budgets').select('id').eq('wallet_id', walletId)
+  let lookup = supabase
+    .from('budgets')
+    .select('id')
+    .eq('wallet_id', walletId)
+    .eq('period_month', month)
   lookup =
     scope === 'category'
       ? lookup.eq('category_id', categoryId)
@@ -269,8 +276,51 @@ export async function setBudget(formData: FormData): Promise<void> {
       scope,
       category_id: categoryId || null,
       amount: amount.toFixed(2),
+      period_month: month,
     })
   }
+
+  revalidatePath('/budgets')
+  revalidatePath('/')
+}
+
+/**
+ * Moves the start of one cycle, or clears the override to fall back to the
+ * anchor day.
+ *
+ * Only the start is settable. The end is always the day before the next cycle
+ * begins, so there is no way to express a gap or an overlap — see 0015.
+ */
+export async function setPeriodStart(formData: FormData): Promise<void> {
+  const month = String(formData.get('period_month') ?? '')
+  const startsOn = String(formData.get('starts_on') ?? '').trim()
+  if (!month) return
+
+  const supabase = await createClient()
+
+  // Blank clears it, which is how you go back to "just use the 26th".
+  if (startsOn === '') {
+    await supabase.from('period_starts').delete().eq('period_month', month)
+    revalidatePath('/budgets')
+    revalidatePath('/')
+    return
+  }
+
+  const starts = await getPeriodStarts()
+  const problem = startDateProblem(month, startsOn, {
+    previousStart: starts[shiftMonthKey(month, -1)],
+    nextStart: starts[shiftMonthKey(month, 1)],
+  })
+  // The CHECK constraint in 0015 is the real guarantee; this just avoids a raw
+  // Postgres error reaching the user.
+  if (problem) return
+
+  await supabase
+    .from('period_starts')
+    .upsert(
+      { period_month: month, starts_on: startsOn },
+      { onConflict: 'period_month' },
+    )
 
   revalidatePath('/budgets')
   revalidatePath('/')

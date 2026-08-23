@@ -1,5 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
-import { addDays, getPeriod, todayIso, type Period } from '@/lib/period'
+import {
+  addDays,
+  getPeriod,
+  getPeriodForMonth,
+  todayIso,
+  type Period,
+  type PeriodOptions,
+  type PeriodStarts,
+} from '@/lib/period'
 
 /**
  * Shared reads. Every one of these relies on RLS to scope rows to the current
@@ -99,15 +107,43 @@ export type Budget = {
   scope: 'wallet' | 'category'
   category_id: string | null
   amount: string
+  period_month: string
 }
 
-/** Every budget in the user's wallets. RLS keeps the other person's out. */
-export async function getBudgets(): Promise<Budget[]> {
+/**
+ * Budgets for one month. RLS keeps the other person's out.
+ *
+ * `month` is the first of the month the CYCLE IS NAMED FOR — "2026-09-01" is
+ * the cycle ending in September. Always pass one: a query without it returns
+ * every month at once and every caller would then have to filter, which is how
+ * a total silently becomes a sum across months.
+ */
+export async function getBudgets(month: string): Promise<Budget[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('budgets')
-    .select('id, wallet_id, scope, category_id, amount')
+    .select('id, wallet_id, scope, category_id, amount, period_month')
+    .eq('period_month', month)
   return (data ?? []) as Budget[]
+}
+
+/**
+ * Copies the previous month's budgets into `month` if it has none yet.
+ * Idempotent, so calling it before reading is safe and cheap — the same
+ * contract as materializeRecurring().
+ */
+export async function carryBudgetsForward(month: string): Promise<void> {
+  const supabase = await createClient()
+  await supabase.rpc('carry_budgets_forward', { target_month: month })
+}
+
+/** Hand-set cycle starts, keyed by the month the cycle is named for. */
+export async function getPeriodStarts(): Promise<PeriodStarts> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('period_starts').select('period_month, starts_on')
+  return Object.fromEntries(
+    (data ?? []).map((row) => [row.period_month as string, row.starts_on as string]),
+  )
 }
 
 export type WalletTotal = {
@@ -231,24 +267,39 @@ export async function getIncome(
  * The current pay-cycle period: anchor day from settings, snapped to real
  * salary dates where they have been logged.
  */
-export async function getCurrentPeriod(): Promise<Period> {
+/** Everything getPeriod needs: the anchor, real paydays, and hand-set starts. */
+async function getPeriodOptions(limit = 24): Promise<PeriodOptions> {
   const supabase = await createClient()
 
-  const [settings, salaries] = await Promise.all([
+  const [settings, salaries, starts] = await Promise.all([
     getSettings(),
     supabase
       .from('income')
       .select('received_on')
       .eq('source', 'salary')
       .order('received_on', { ascending: false })
-      .limit(24),
+      .limit(limit),
+    getPeriodStarts(),
   ])
 
-  return getPeriod(todayIso(), {
+  return {
     anchorDay: Number(settings.pay_anchor_day ?? 26),
     windowDays: Number(settings.pay_anchor_window_days ?? 7),
     salaryDates: (salaries.data ?? []).map((row) => row.received_on as string),
-  })
+    starts,
+  }
+}
+
+export async function getCurrentPeriod(): Promise<Period> {
+  return getPeriod(todayIso(), await getPeriodOptions())
+}
+
+/**
+ * A named month's period, whether or not it has arrived. This is what the Plan
+ * tab's month picker resolves to, so September's budgets can be set in August.
+ */
+export async function getPeriodForMonthKey(month: string): Promise<Period> {
+  return getPeriodForMonth(month, todayIso(), await getPeriodOptions(60))
 }
 
 /**
@@ -259,23 +310,7 @@ export async function getCurrentPeriod(): Promise<Period> {
  * payday stays moved in the history.
  */
 export async function getRecentPeriods(count = 6): Promise<Period[]> {
-  const supabase = await createClient()
-  const [settings, salaries] = await Promise.all([
-    getSettings(),
-    supabase
-      .from('income')
-      .select('received_on')
-      .eq('source', 'salary')
-      .order('received_on', { ascending: false })
-      .limit(60),
-  ])
-
-  const options = {
-    anchorDay: Number(settings.pay_anchor_day ?? 26),
-    windowDays: Number(settings.pay_anchor_window_days ?? 7),
-    salaryDates: (salaries.data ?? []).map((row) => row.received_on as string),
-  }
-
+  const options = await getPeriodOptions(60)
   const periods: Period[] = []
   let cursor = todayIso()
 

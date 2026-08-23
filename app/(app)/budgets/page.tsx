@@ -2,15 +2,18 @@ import {
   deleteBudget,
   deleteRecurringRule,
   setBudget,
+  setPeriodStart,
   toggleCategorySavings,
   toggleRecurringRule,
   updateRecurringRule,
 } from '../actions'
 import {
+  carryBudgetsForward,
   getBudgets,
   getCategories,
   getCurrentPeriod,
   getExpenses,
+  getPeriodForMonthKey,
   getRecurringRules,
   getWallets,
 } from '@/lib/queries'
@@ -19,7 +22,13 @@ import { BudgetBar } from '@/components/budget-bar'
 import { RecurringForm } from '@/components/recurring-form'
 import { ConfirmDelete } from '@/components/confirm-delete'
 import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
-import { nextOccurrence, todayIso } from '@/lib/period'
+import {
+  MAX_CYCLE_DAYS,
+  monthLabel,
+  nextOccurrence,
+  shiftMonthKey,
+  todayIso,
+} from '@/lib/period'
 
 /**
  * Plan — the two ways money is committed ahead of time.
@@ -34,24 +43,47 @@ import { nextOccurrence, todayIso } from '@/lib/period'
  * counts towards its category's budget like any other spending.
  *
  * The period is the pay cycle, not the calendar month — the household is paid
- * around the 26th, so a calendar reset landed five days after payday.
+ * around the 26th, so a calendar reset landed five days after payday. Since
+ * 0015 you can step to any month and set its budgets before it arrives; the
+ * cycle named for a month is the one that ENDS in it.
  */
 export default async function PlanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ wallet?: string }>
+  searchParams: Promise<{ wallet?: string; month?: string }>
 }) {
   const params = await searchParams
-  const period = await getCurrentPeriod()
+  const live = await getCurrentPeriod()
+
+  // ?month= wins, so September is reachable in August. Anything unparseable
+  // falls back to the live cycle rather than erroring.
+  const month = /^\d{4}-\d{2}-01$/.test(params.month ?? '')
+    ? params.month!
+    : live.month
+  const period = month === live.month ? live : await getPeriodForMonthKey(month)
   const { from, to } = period
+  const isLive = month === live.month
+
+  // Fill this month in from the previous one before reading, so stepping to
+  // October shows September's numbers instead of an empty page. Idempotent —
+  // it does nothing once the month has any budget of its own.
+  await carryBudgetsForward(month)
 
   const [wallets, categories, budgets, expenses, rules] = await Promise.all([
     getWallets(),
     getCategories(),
-    getBudgets(),
+    getBudgets(month),
     getExpenses({ from, to, limit: 1000 }),
     getRecurringRules(),
   ])
+
+  const previousMonth = shiftMonthKey(month, -1)
+  const nextMonth = shiftMonthKey(month, 1)
+  const walletParam = params.wallet ? `&wallet=${params.wallet}` : ''
+  // The latest a cycle named for this month may start without ending after the
+  // month is over. Mirrors the CHECK constraint in 0015.
+  const latestStart = month
+  const earliestStart = shiftMonthKey(month, -1)
 
   // Default to Joint: it holds the shared costs and is the only wallet that
   // offers recurring rules.
@@ -87,15 +119,55 @@ export default async function PlanPage({
   return (
     <>
       <h1 className="text-xl font-semibold tracking-tight">Plan</h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        {period.label} cycle · {period.daysLeft} days left, nothing carries over
+
+      {/* Month stepper. Budgets belong to a month, so which month you are
+          editing has to be the most obvious thing on the page. */}
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <a
+          href={`/budgets?month=${previousMonth}${walletParam}`}
+          aria-label={`Go to ${monthLabel(previousMonth)}`}
+          className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm dark:border-neutral-700"
+        >
+          ←
+        </a>
+        <div className="min-w-0 flex-1 text-center">
+          <p className="truncate text-sm font-medium">{period.label}</p>
+          <p className="truncate text-xs text-neutral-500">
+            {period.from} – {period.to} · {period.daysTotal} days
+          </p>
+        </div>
+        <a
+          href={`/budgets?month=${nextMonth}${walletParam}`}
+          aria-label={`Go to ${monthLabel(nextMonth)}`}
+          className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm dark:border-neutral-700"
+        >
+          →
+        </a>
+      </div>
+
+      <p className="mt-2 text-xs text-neutral-500">
+        {isLive ? (
+          <>
+            Live cycle · {period.daysLeft} days left, nothing carries over
+            {period.snapped && ' · start moved to your actual payday'}
+            {period.overridden && ' · start set by hand'}
+          </>
+        ) : (
+          <>
+            {period.from > today ? 'Not started yet' : 'Past cycle'} · set its
+            budgets here and they apply when it comes round.{' '}
+            <a href={`/budgets${params.wallet ? `?wallet=${params.wallet}` : ''}`} className="underline">
+              Back to {live.label}
+            </a>
+          </>
+        )}
       </p>
 
       <div className="mt-4 flex flex-wrap gap-2">
         {wallets.map((wallet) => (
           <a
             key={wallet.id}
-            href={`/budgets?wallet=${wallet.id}`}
+            href={`/budgets?wallet=${wallet.id}&month=${month}`}
             className={`rounded-lg border px-3 py-1.5 text-sm ${
               wallet.id === selected?.id
                 ? 'border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900'
@@ -106,6 +178,47 @@ export default async function PlanPage({
           </a>
         ))}
       </div>
+
+      {/* Only the START is editable. The end is always the day before the next
+          cycle begins, so a gap or an overlap cannot be expressed. */}
+      <details className="mt-4">
+        <summary className="cursor-pointer text-xs text-neutral-500">
+          Adjust when {period.label} starts
+        </summary>
+        <form action={setPeriodStart} className="mt-3 flex flex-wrap items-center gap-2">
+          <input type="hidden" name="period_month" value={month} />
+          <input
+            name="starts_on"
+            type="date"
+            defaultValue={period.overridden ? period.from : ''}
+            min={earliestStart}
+            max={latestStart}
+            className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
+          />
+          <button
+            type="submit"
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700"
+          >
+            {period.overridden ? 'Update' : 'Set'}
+          </button>
+          {period.overridden && (
+            <button
+              type="submit"
+              name="starts_on"
+              value=""
+              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-500 dark:border-neutral-700"
+            >
+              Use the 26th again
+            </button>
+          )}
+        </form>
+        <p className="mt-2 text-xs text-neutral-500">
+          Ends {period.to}, the day before {monthLabel(nextMonth)} starts.{' '}
+          {period.label} must start between {earliestStart} and {latestStart} so
+          it ends within the month, and no cycle may run past {MAX_CYCLE_DAYS}{' '}
+          days.
+        </p>
+      </details>
 
       {/* ------------------------------ RECURRING ------------------------ */}
       {showRecurring && (
@@ -295,6 +408,7 @@ export default async function PlanPage({
             <div className="mt-2 flex items-center gap-2">
               <form action={setBudget} className="flex min-w-0 flex-1 gap-2">
                 <input type="hidden" name="wallet_id" value={selected?.id ?? ''} />
+                <input type="hidden" name="period_month" value={month} />
                 <input
                   name="amount"
                   inputMode="decimal"
@@ -389,6 +503,7 @@ export default async function PlanPage({
                   <div className="mt-2 flex items-center gap-2">
                     <form action={setBudget} className="flex min-w-0 flex-1 gap-2">
                       <input type="hidden" name="wallet_id" value={selected?.id ?? ''} />
+                <input type="hidden" name="period_month" value={month} />
                       <input type="hidden" name="category_id" value={category.id} />
                       <input
                         name="amount"

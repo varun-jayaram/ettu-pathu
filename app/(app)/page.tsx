@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import {
+  carryBudgetsForward,
   getBudgets,
   getCategories,
   getCurrentPeriod,
@@ -30,10 +31,15 @@ export default async function HomePage() {
   const period = await getCurrentPeriod()
   const { from, to } = period
 
+  // Home always shows the LIVE cycle. The month picker lives on Plan alone, so
+  // there is no way to end up reading a future month's budgets here and think
+  // it is where you currently stand.
+  await carryBudgetsForward(period.month)
+
   const [wallets, expenses, budgets, categories, income, totals] = await Promise.all([
     getWallets(),
     getExpenses({ from, to, limit: 500 }),
-    getBudgets(),
+    getBudgets(period.month),
     getCategories(),
     getIncome({ from, to }),
     getHouseholdTotals(from, to),

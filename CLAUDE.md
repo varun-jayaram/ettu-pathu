@@ -47,6 +47,13 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
   no second level. Both recurring rules and budgets attach to a category.
 - **Budgets** are per category and define "over". Personal wallets instead take
   one `scope = 'wallet'` budget — a single number, no breakdown.
+- **Budgets belong to a month.** `period_month` is the first of the month the
+  cycle is *named for* (the month it ends in). Opening an empty month copies the
+  previous one forward via `carry_budgets_forward()`. The month stepper is on
+  Plan only — Home and Reports always show the live cycle.
+- **Cycle starts are adjustable** via `period_starts`; the end is always the day
+  before the next cycle, so gaps and overlaps cannot be expressed. Max 31 days,
+  and a cycle must end inside the month it is named for.
 
 ## Layout
 
@@ -56,7 +63,7 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
 | `app/login/` | The only unauthenticated route. There is no signup route, by design |
 | `lib/supabase/` | `client.ts` (browser), `server.ts` (RSC + actions), `proxy.ts` (session refresh) |
 | `proxy.ts` | Session refresh + route protection. **Next 16 renamed Middleware → Proxy** |
-| `supabase/migrations/` | `0001_init` · `0002_rls` · `0003_seed` · `0004_recurring` · `0007` income+cycles · `0011` drops group `kind` · `0014` drops groups entirely |
+| `supabase/migrations/` | `0001_init` · `0002_rls` · `0003_seed` · `0004_recurring` · `0007` income+cycles · `0011` drops group `kind` · `0014` drops groups entirely · `0015` monthly budgets + adjustable cycle dates |
 
 ## Conventions
 

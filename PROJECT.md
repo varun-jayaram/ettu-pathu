@@ -213,6 +213,50 @@ unreadable in practice. With one level there is nothing to reconcile.
 | 80–100% | approaching |
 | > 100% | over |
 
+### A budget belongs to a month
+
+Since `0015` every budget carries `period_month` — **the first of the month the
+cycle is named for**. A period is named for the month it *ends* in, so the
+26 Aug–25 Sep cycle stores `2026-09-01`. That is a label, not a range; the real
+boundaries are computed.
+
+This is what lets you set September's budgets in August, and lets one month be
+generous without rewriting history. Plan carries a month stepper; **Home and
+Reports deliberately do not** — they always show the live cycle, so there is no
+way to be looking at October's plan while believing it is where you stand.
+
+**Carry-forward, not defaults.** Opening a month with no budgets copies the most
+recent earlier month's forward, once, into real rows — `carry_budgets_forward()`,
+idempotent, same contract as `materialize_recurring()`.
+
+A read-time fallback was rejected. It would have meant that editing September
+retroactively changed October everywhere October had not been touched, so
+"September is frozen" would have been a lie. Copying makes each month an
+independent record the moment you look at it.
+
+### Cycle dates are adjustable, within two rules
+
+`period_starts` holds a hand-set start for a month; absent means "anchor day,
+snapped to a logged payday" exactly as before, so the table stays empty until
+someone actually moves something. A hand-set start beats both the anchor **and**
+a nearby salary date — it is the one boundary a human asked for.
+
+**Only the start is stored.** The end is always the day before the next cycle
+begins, which makes a gap or an overlap *unrepresentable* rather than merely
+discouraged.
+
+Two rules, enforced as CHECK constraints in Postgres and explained by
+`startDateProblem()` in the UI:
+
+1. **A cycle named for month M must end within M.** Enforced as: it must start
+   between the first of M−1 and the first of M.
+2. **No cycle may exceed 31 days.** A 32-day month is always a mistake.
+
+**None of this touches recurring rules.** `materialize_recurring()` reads
+`recurring_rules` and the calendar; it has never read `budgets` or the pay cycle.
+Rules keep firing on their day of every month regardless of how budgets or cycle
+boundaries are edited.
+
 Budgets are a single amount compared against `date_trunc('month', spent_on)` —
 no per-month rows, no rollover balances, so a quiet month does not bank credit.
 Editing a budget changes it for the current and future months. Historical
