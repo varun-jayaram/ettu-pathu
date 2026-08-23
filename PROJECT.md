@@ -101,8 +101,15 @@ merely unlikely:
 stops being private.** Add a new function instead.
 
 What stays private: categories, notes, dates, and individual amounts. What is
-now shared: the per-wallet total and its budget progress. A total is itself
-information — this was accepted knowingly.
+now shared: the per-wallet total, and for a PERSONAL wallet its budget progress
+too. A total is itself information — this was accepted knowingly.
+
+The joint wallet shows no budget bar on Home. It has no single budget to be
+"progressing" against: its budgets are per category, so a wallet-level bar
+measured every joint euro — rent, insurance, car service — against whichever
+categories happened to carry one, and read `5.580,45 € / 600,00 €, over by
+4.980,45 €`. Permanently red and saying nothing. The per-category bars above it
+already answer "where am I over?" honestly.
 
 ---
 

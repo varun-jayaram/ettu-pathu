@@ -255,7 +255,16 @@ export default async function HomePage() {
                   {formatEur(spent)}
                 </span>
               </div>
-              {budgeted > 0 && (
+              {/* PERSONAL wallets only. There, one number genuinely is the
+                  whole budget, so spend-vs-budget compares like with like.
+
+                  The joint wallet carries per-category budgets, so this bar
+                  measured EVERY joint euro — rent, insurance, car service —
+                  against the handful of categories that happen to have one:
+                  5.580,45 € / 600,00 €, "over by 4.980,45 €". Permanently red
+                  and meaningless. The per-category bars above already answer
+                  "where am I over?" honestly. */}
+              {wallet.wallet_kind === 'personal' && budgeted > 0 && (
                 <div className="mt-2">
                   <BudgetBar
                     label={`${wallet.wallet_name} budget`}
