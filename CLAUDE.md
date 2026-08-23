@@ -50,11 +50,15 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
 - **Budgets belong to a month.** `period_month` is the first of the month the
   cycle is *named for* (the month it ends in). A new month starts with **no
   budgets** — nothing is copied forward (`0017`), because recurring already
-  repeats itself and a budget is a per-month decision. The month stepper is on
-  Plan only — Home and Reports always show the live cycle.
-- **Cycle starts are adjustable** via `period_starts`; the end is always the day
-  before the next cycle, so gaps and overlaps cannot be expressed. Max 31 days,
-  and a cycle must end inside the month it is named for.
+  repeats itself and a budget is a per-month decision.
+- **The month is app-wide**, in the header, held in a cookie and read by every
+  tab via `getActivePeriod()`. Off the live cycle it goes amber with a Today
+  escape. Log follows it except while searching, which spans all cycles.
+- **Cycle starts are adjustable** on the **Income** tab (income defines the
+  cycle), stored in `period_starts`. Only the start is settable — the end is
+  always the day before the next cycle, so gaps and overlaps cannot be
+  expressed. Max 35 days, and a cycle must end inside the month it is named for.
+  `pay_anchor_day` is the fallback for months nobody has set by hand.
 
 ## Layout
 

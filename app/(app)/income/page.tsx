@@ -1,6 +1,7 @@
-import { deleteIncome, setAnchorDay, updateIncome } from '../actions'
+import { deleteIncome, setPeriodStart, updateIncome } from '../actions'
 import { getActivePeriod, getIncome, getSettings } from '@/lib/queries'
 import { formatEur, sumCents } from '@/lib/money'
+import { MAX_CYCLE_DAYS, monthLabel, shiftMonthKey } from '@/lib/period'
 import { IncomeForm } from '@/components/income-form'
 import { ConfirmDelete } from '@/components/confirm-delete'
 import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
@@ -26,6 +27,13 @@ export default async function IncomePage({
 
   const periodTotal = sumCents(periodIncome)
   const anchorDay = Number(settings.pay_anchor_day ?? 26)
+
+  // Mirrors the CHECK constraint in 0015: the cycle named for a month must
+  // start between the first of the previous month and the first of that one,
+  // which is what keeps it ending inside its own month.
+  const nextMonth = shiftMonthKey(period.month, 1)
+  const earliestStart = shiftMonthKey(period.month, -1)
+  const latestStart = period.month
 
   return (
     <>
@@ -136,29 +144,59 @@ export default async function IncomePage({
         )}
       </section>
 
+      {/* This lives on Income, not Plan, because income is what defines the
+          cycle — see the docstring above. It used to be a "Pay cycle" box
+          asking for a day-of-the-month anchor, which set every cycle at once
+          and could not express "September started late". You now set the month
+          in front of you. */}
       <section className="mt-10 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <h2 className="text-sm font-medium">Pay cycle</h2>
+        <h2 className="text-sm font-medium">Income cycle</h2>
         <p className="mt-1 text-xs text-neutral-500">
-          Cycles run from this day of the month to the day before the next. When you
-          log a salary within {settings.pay_anchor_window_days ?? 7} days of it, the
-          cycle follows the real payday instead.
+          {period.label} runs {formatDate(period.from)} – {formatDate(period.to)} ·{' '}
+          {period.daysTotal} days
+          {period.overridden
+            ? ' · set by hand'
+            : period.snapped
+              ? ' · following your actual payday'
+              : ` · from the ${anchorDay}${ordinal(anchorDay)}`}
         </p>
-        <form action={setAnchorDay} className="mt-3 flex gap-2">
+
+        {/* Only the START. The end is always the day before the next cycle, so
+            a gap or an overlap cannot be expressed at all. */}
+        <form action={setPeriodStart} className="mt-3 flex flex-wrap items-center gap-2">
+          <input type="hidden" name="period_month" value={period.month} />
           <input
-            name="anchor_day"
-            type="number"
-            min={1}
-            max={31}
-            defaultValue={anchorDay}
-            className="w-20 rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
+            name="starts_on"
+            type="date"
+            defaultValue={period.overridden ? period.from : ''}
+            min={earliestStart}
+            max={latestStart}
+            className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
           />
           <button
             type="submit"
             className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700"
           >
-            Save
+            {period.overridden ? 'Update' : 'Set start'}
           </button>
+          {period.overridden && (
+            <button
+              type="submit"
+              name="starts_on"
+              value=""
+              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-500 dark:border-neutral-700"
+            >
+              Reset
+            </button>
+          )}
         </form>
+
+        <p className="mt-2 text-xs text-neutral-500">
+          Ends the day before {monthLabel(nextMonth)} starts. Must begin between{' '}
+          {formatDate(earliestStart)} and {formatDate(latestStart)} so the cycle
+          ends inside {period.label}, and no cycle may run past {MAX_CYCLE_DAYS}{' '}
+          days. Change month in the header to set a different one.
+        </p>
       </section>
     </>
   )
@@ -170,4 +208,10 @@ function formatDate(value: string): string {
     month: 'short',
     timeZone: 'UTC',
   })
+}
+
+/** "26th", "1st", "22nd" — only used to describe the fallback anchor day. */
+function ordinal(day: number): string {
+  if (day % 100 >= 11 && day % 100 <= 13) return 'th'
+  return { 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] ?? 'th'
 }

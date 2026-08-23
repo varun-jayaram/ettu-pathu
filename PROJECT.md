@@ -264,9 +264,18 @@ cycle is named for**. A period is named for the month it *ends* in, so the
 boundaries are computed.
 
 This is what lets you set September's budgets in August, and lets one month be
-generous without rewriting history. Plan carries a month stepper; **Home and
-Reports deliberately do not** — they always show the live cycle, so there is no
-way to be looking at October's plan while believing it is where you stand.
+generous without rewriting history.
+
+**The month is app-wide**, in the header. It began as a stepper on Plan alone,
+on the theory that Home and Reports should always show the live cycle — but a
+month is a lens on the whole app, and having it on one tab meant Plan could show
+September while Home showed August. It is a cookie rather than a URL parameter
+because it is a *mode*, not a page: moving between tabs must not drop it, and
+threading `?month=` through every link breaks the moment one link forgets.
+
+The cost of a mode is that it can be forgotten, so being off the live cycle is
+deliberately loud — amber label, a **Today** escape, a banner on Home, and no
+"N days left" for a cycle that has not started.
 
 **A new month starts with no budgets.** `0015` copied the previous month's
 forward; `0017` removed that, and the reason is the Recurring/Budget split
@@ -283,6 +292,13 @@ decided yet" — never "zero".
 
 ### Cycle dates are adjustable, within two rules
 
+**Set on the Income tab**, because income is what defines the cycle. It replaced
+a "Pay cycle" box that asked for a day-of-the-month anchor: one number setting
+every cycle at once, which could not express "September started late" — the case
+that actually comes up. `setAnchorDay` is gone with it. `pay_anchor_day` survives
+in `app_settings` as the fallback for months nobody has set by hand; the UI no
+longer asks about it.
+
 `period_starts` holds a hand-set start for a month; absent means "anchor day,
 snapped to a logged payday" exactly as before, so the table stays empty until
 someone actually moves something. A hand-set start beats both the anchor **and**
@@ -297,7 +313,9 @@ Two rules, enforced as CHECK constraints in Postgres and explained by
 
 1. **A cycle named for month M must end within M.** Enforced as: it must start
    between the first of M−1 and the first of M.
-2. **No cycle may exceed 31 days.** A 32-day month is always a mistake.
+2. **No cycle may exceed 35 days.** Deliberately longer than a calendar
+   month: a payday that slips can stretch a cycle past 31 days without
+   anything being wrong. Past 35 it is a mis-keyed date, not a late salary.
 
 **None of this touches recurring rules.** `materialize_recurring()` reads
 `recurring_rules` and the calendar; it has never read `budgets` or the pay cycle.

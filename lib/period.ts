@@ -48,8 +48,13 @@ export type PeriodOptions = {
   starts?: PeriodStarts
 }
 
-/** The longest a cycle may run. A 32-day month is always a mistake. */
-export const MAX_CYCLE_DAYS = 31
+/**
+ * The longest a cycle may run. Longer than a calendar month on purpose: a
+ * payday that slips can stretch a cycle past 31 days without anything being
+ * wrong, and refusing that would block a real situation. Past 35 it is a
+ * mis-keyed date, not a late salary.
+ */
+export const MAX_CYCLE_DAYS = 35
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -279,7 +284,7 @@ export function monthLabel(month: ISODate): string {
  * Why a proposed start date for `month` is not allowed, or null if it is.
  *
  * The two rules, in the user's words: the cycle named for a month has to end
- * before that month does, and no cycle may run longer than 31 days. Both are
+ * before that month does, and no cycle may run longer than MAX_CYCLE_DAYS. Both are
  * checked here AND as CHECK constraints in 0015 — this function exists to
  * explain the refusal, not to be the only thing enforcing it.
  */

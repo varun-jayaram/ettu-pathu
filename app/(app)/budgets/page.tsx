@@ -2,7 +2,6 @@ import {
   deleteBudget,
   deleteRecurringRule,
   setBudget,
-  setPeriodStart,
   toggleCategorySavings,
   toggleRecurringRule,
   updateRecurringRule,
@@ -21,10 +20,7 @@ import { RecurringForm } from '@/components/recurring-form'
 import { ConfirmDelete } from '@/components/confirm-delete'
 import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
 import {
-  MAX_CYCLE_DAYS,
-  monthLabel,
   nextOccurrence,
-  shiftMonthKey,
   todayIso,
 } from '@/lib/period'
 
@@ -69,11 +65,6 @@ export default async function PlanPage({
     getRecurringRules(),
   ])
 
-  const nextMonth = shiftMonthKey(month, 1)
-  // The latest a cycle named for this month may start without ending after the
-  // month is over. Mirrors the CHECK constraint in 0015.
-  const latestStart = month
-  const earliestStart = shiftMonthKey(month, -1)
 
   // Default to Joint: it holds the shared costs and is the only wallet that
   // offers recurring rules.
@@ -145,46 +136,9 @@ export default async function PlanPage({
         ))}
       </div>
 
-      {/* Only the START is editable. The end is always the day before the next
-          cycle begins, so a gap or an overlap cannot be expressed. */}
-      <details className="mt-4">
-        <summary className="cursor-pointer text-xs text-neutral-500">
-          Adjust when {period.label} starts
-        </summary>
-        <form action={setPeriodStart} className="mt-3 flex flex-wrap items-center gap-2">
-          <input type="hidden" name="period_month" value={month} />
-          <input
-            name="starts_on"
-            type="date"
-            defaultValue={period.overridden ? period.from : ''}
-            min={earliestStart}
-            max={latestStart}
-            className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
-          />
-          <button
-            type="submit"
-            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700"
-          >
-            {period.overridden ? 'Update' : 'Set'}
-          </button>
-          {period.overridden && (
-            <button
-              type="submit"
-              name="starts_on"
-              value=""
-              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-500 dark:border-neutral-700"
-            >
-              Use the 26th again
-            </button>
-          )}
-        </form>
-        <p className="mt-2 text-xs text-neutral-500">
-          Ends {period.to}, the day before {monthLabel(nextMonth)} starts.{' '}
-          {period.label} must start between {earliestStart} and {latestStart} so
-          it ends within the month, and no cycle may run past {MAX_CYCLE_DAYS}{' '}
-          days.
-        </p>
-      </details>
+      {/* The cycle-date editor lives on the Income tab now. Income is what
+          defines the cycle, and two places to set one boundary is how Plan
+          and Home came to disagree about the month. */}
 
       {/* ------------------------------ RECURRING ------------------------ */}
       {showRecurring && (

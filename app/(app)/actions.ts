@@ -423,21 +423,11 @@ export async function deleteIncome(formData: FormData): Promise<void> {
   revalidatePath('/income')
 }
 
-/** The pay-cycle anchor day, 1–31. Clamped per month (31 -> 28 in February). */
-export async function setAnchorDay(formData: FormData): Promise<void> {
-  const day = Number(String(formData.get('anchor_day') ?? ''))
-  if (!Number.isInteger(day) || day < 1 || day > 31) return
-
-  const supabase = await createClient()
-  await supabase
-    .from('app_settings')
-    .update({ value: String(day), updated_at: new Date().toISOString() })
-    .eq('key', 'pay_anchor_day')
-
-  revalidatePath('/')
-  revalidatePath('/income')
-  revalidatePath('/budgets')
-}
+// setAnchorDay is gone. The anchor day set every cycle at once and could not
+// say "September started late", which is the case that actually comes up. You
+// now set the cycle you are looking at, on the Income tab. `pay_anchor_day`
+// survives in app_settings as the FALLBACK for any month nobody has set by
+// hand — it is no longer something the UI asks about.
 
 /**
  * Creates a recurring rule — rent, insurance, subscriptions, the donation.
