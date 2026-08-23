@@ -41,18 +41,48 @@ export function VizStyles() {
   )
 }
 
+export type BarItem = {
+  id: string
+  label: string
+  sublabel?: string
+  cents: number
+}
+
+export type BarRow = {
+  id: string
+  label: string
+  cents: number
+  hint?: string
+  /** The rows that add up to `cents`. Omit to make the bar non-expandable —
+   *  which is how a private wallet's lump stays a lump. */
+  items?: BarItem[]
+}
+
 /**
  * Magnitude comparison across a handful of named groups.
  *
  * Horizontal bars because the labels are long words, not dates. One hue —
  * length carries the magnitude, so a second colour would encode nothing.
  * 4px rounded data-end, values direct-labelled.
+ *
+ * A row with `items` expands to the individual expenses behind it, so "where
+ * did 440,66 € go?" is answered in place. Built on <details>, so it costs no
+ * client JS, is keyboard-operable for free, and survives with JS disabled. The
+ * whole row is the <summary> — per the interaction spec the mark is the hit
+ * target, not some separate chevron nobody aims at.
+ *
+ * Expanding never GATES a value: the bar's own total and percentage stay
+ * visible collapsed, and the breakdown only elaborates them.
+ *
+ * A row WITHOUT items cannot be opened. That is the privacy guarantee doing its
+ * job — the other person's personal wallet arrives as one aggregate figure and
+ * there is no per-row data here to reveal even by accident.
  */
 export function GroupBars({
   rows,
   emptyMessage = 'Nothing spent this cycle.',
 }: {
-  rows: { id: string; label: string; cents: number; hint?: string }[]
+  rows: BarRow[]
   emptyMessage?: string
 }) {
   const max = Math.max(...rows.map((row) => row.cents), 1)
@@ -64,34 +94,85 @@ export function GroupBars({
 
   return (
     <div className="viz mt-3 space-y-3">
-      {rows.map((row) => (
-        <div key={row.id}>
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="truncate text-sm">{row.label}</span>
-            <span className="shrink-0 tabular-nums text-sm font-medium">
-              {formatEur(row.cents)}
-              <span className="ml-2 text-xs font-normal text-neutral-500">
-                {Math.round((row.cents / total) * 100)}%
+      {rows.map((row) => {
+        const body = (
+          <>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="truncate text-sm">{row.label}</span>
+              <span className="shrink-0 tabular-nums text-sm font-medium">
+                {formatEur(row.cents)}
+                <span className="ml-2 text-xs font-normal text-neutral-500">
+                  {Math.round((row.cents / total) * 100)}%
+                </span>
               </span>
-            </span>
-          </div>
-          <div
-            className="mt-1 h-2.5 w-full overflow-hidden rounded-full"
-            style={{ background: 'var(--viz-track)' }}
-            role="img"
-            aria-label={`${row.label}: ${formatEur(row.cents)}`}
-          >
+            </div>
             <div
-              className="h-full rounded-full"
-              style={{
-                width: `${Math.max((row.cents / max) * 100, 1.5)}%`,
-                background: 'var(--viz-series-1)',
-              }}
-            />
-          </div>
-          {row.hint && <p className="mt-0.5 text-xs text-neutral-500">{row.hint}</p>}
-        </div>
-      ))}
+              className="mt-1 h-2.5 w-full overflow-hidden rounded-full"
+              style={{ background: 'var(--viz-track)' }}
+              role="img"
+              aria-label={`${row.label}: ${formatEur(row.cents)}`}
+            >
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${Math.max((row.cents / max) * 100, 1.5)}%`,
+                  background: 'var(--viz-series-1)',
+                }}
+              />
+            </div>
+            {row.hint && (
+              <p className="mt-0.5 text-xs text-neutral-500">{row.hint}</p>
+            )}
+          </>
+        )
+
+        if (!row.items?.length) {
+          return <div key={row.id}>{body}</div>
+        }
+
+        return (
+          <details key={row.id} className="group">
+            <summary className="cursor-pointer list-none rounded-lg outline-offset-2 hover:opacity-80 focus-visible:outline-2">
+              {body}
+              <span className="mt-0.5 block text-xs text-neutral-500">
+                {row.items.length}{' '}
+                {row.items.length === 1 ? 'expense' : 'expenses'}
+                <span className="group-open:hidden"> · show</span>
+                <span className="hidden group-open:inline"> · hide</span>
+              </span>
+            </summary>
+
+            <ul className="mt-1.5 space-y-1 border-l border-neutral-200 pl-3 dark:border-neutral-800">
+              {row.items.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex items-baseline justify-between gap-3"
+                >
+                  <span className="min-w-0 truncate text-xs text-neutral-500">
+                    {item.label}
+                    {item.sublabel && (
+                      <span className="ml-1.5 text-neutral-400">
+                        {item.sublabel}
+                      </span>
+                    )}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-xs">
+                    {formatEur(item.cents)}
+                  </span>
+                </li>
+              ))}
+              {/* Restating the total is the point: it shows the parts actually
+                  add up to the bar rather than asking you to trust it. */}
+              <li className="flex items-baseline justify-between gap-3 border-t border-neutral-200 pt-1 dark:border-neutral-800">
+                <span className="text-xs font-medium">Total</span>
+                <span className="shrink-0 tabular-nums text-xs font-medium">
+                  {formatEur(row.cents)}
+                </span>
+              </li>
+            </ul>
+          </details>
+        )
+      })}
     </div>
   )
 }

@@ -8,7 +8,13 @@ import {
   getWallets,
 } from '@/lib/queries'
 import { formatEur, sumCents, toCents } from '@/lib/money'
-import { CycleColumns, GroupBars, VizStyles } from '@/components/charts'
+import {
+  CycleColumns,
+  GroupBars,
+  VizStyles,
+  type BarItem,
+  type BarRow,
+} from '@/components/charts'
 
 /**
  * Reports. Everything is scoped to the pay cycle, and every euro that leaves
@@ -75,26 +81,53 @@ export default async function ReportsPage({
   // --- Where it went, by category --------------------------------------------
   // Once was two charts, "by group" above "top categories". With one level in
   // the taxonomy they would be the same chart twice, so this is the only one.
-  const byCategory = new Map<string, { label: string; cents: number }>()
+  const shortDate = (value: string) =>
+    new Date(`${value}T00:00:00Z`).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'UTC',
+    })
+
+  const byCategory = new Map<
+    string,
+    { label: string; cents: number; items: BarItem[] }
+  >()
   for (const expense of spend) {
     const category = expense.categories
     const entry = byCategory.get(category.id) ?? {
       label: `${category.icon ?? ''} ${category.name}`.trim(),
       cents: 0,
+      items: [],
     }
     entry.cents += Math.round(Number(expense.amount) * 100)
+    // The rows that make up the bar, so a total can be checked rather than
+    // taken on trust. Newest first, matching the Log.
+    entry.items.push({
+      id: expense.id,
+      label: `${shortDate(expense.spent_on)}${expense.note ? ` · ${expense.note}` : ''}`,
+      sublabel: `${expense.wallets.name}${expense.recurring_rule_id ? ' · ↻' : ''}`,
+      cents: Math.round(Number(expense.amount) * 100),
+    })
     byCategory.set(category.id, entry)
   }
-  const categoryRows = [
+  const categoryRows: BarRow[] = [
+    // `items` are already newest-first: getExpenses orders by spent_on desc,
+    // and they were pushed in that order. Re-sorting here by the row id would
+    // order by UUID, which is no order at all.
     ...[...byCategory.entries()].map(([id, value]) => ({ id, ...value })),
     // One lump row per wallet whose detail is private to the other person.
     // Without these the bars would not add up to the household total.
+    //
+    // NO `items`, deliberately — that is what makes the row non-expandable.
+    // There is nothing to expand even in principle: this figure came from the
+    // aggregate-only totals function, which never returns rows. See PROJECT.md.
     ...(params.wallet || view
       ? []
       : hiddenWallets.map((w) => ({
           id: w.wallet_id,
           label: `${w.wallet_name} (personal)`,
           cents: toCents(w.spent),
+          hint: 'private · total only',
         }))),
   ].sort((a, b) => b.cents - a.cents)
 
@@ -218,6 +251,9 @@ export default async function ReportsPage({
 
       <section className="mt-8">
         <h2 className="text-sm font-medium">Where it went</h2>
+        <p className="mt-1 text-xs text-neutral-500">
+          Tap a bar to see the expenses that add up to it.
+        </p>
         <GroupBars rows={categoryRows} />
       </section>
 
