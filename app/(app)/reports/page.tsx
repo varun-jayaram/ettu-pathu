@@ -31,8 +31,11 @@ export default async function ReportsPage({
   const [allExpenses, allIncome, totals, cycleTotals] = await Promise.all([
     getExpenses({ ...span, walletId: params.wallet, limit: 2000 }),
     getIncome({ ...span, limit: 500 }),
-    getHouseholdTotals(period.from, period.to),
-    Promise.all(periods.map((c) => getHouseholdTotals(c.from, c.to))),
+    getHouseholdTotals(period.from, period.to, period.month),
+    // Each cycle's budget total must come from that cycle's own month, or a
+    // trend line would compare this month's spend against every month's budgets
+    // added together.
+    Promise.all(periods.map((c) => getHouseholdTotals(c.from, c.to, c.month))),
   ])
 
   // Wallets this user cannot read row-by-row. They appear as a single lump so

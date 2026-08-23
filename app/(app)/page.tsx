@@ -42,7 +42,7 @@ export default async function HomePage() {
     getBudgets(period.month),
     getCategories(),
     getIncome({ from, to }),
-    getHouseholdTotals(from, to),
+    getHouseholdTotals(from, to, period.month),
   ])
 
   /**

@@ -167,11 +167,13 @@ export type WalletTotal = {
 export async function getHouseholdTotals(
   from: string,
   to: string,
+  budgetMonth: string,
 ): Promise<WalletTotal[]> {
   const supabase = await createClient()
   const { data } = await supabase.rpc('household_wallet_totals', {
     from_date: from,
     to_date: to,
+    budget_month: budgetMonth,
   })
   return (data ?? []) as WalletTotal[]
 }
