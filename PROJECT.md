@@ -220,6 +220,26 @@ unreadable in practice. With one level there is nothing to reconcile.
 | 80–100% | approaching |
 | > 100% | over |
 
+### Expected expense = recurring + budgets, minus the overlap
+
+Home carries an **Expected expense** box: what the month is committed to, as
+opposed to what it has cost so far. It links to Plan, where both halves are set.
+
+The two do not simply add. **A budget already contains its category's recurring
+floor** — the Transport budget covers the Deutschlandticket, it is not on top of
+it — so recurring that sits inside a budgeted category is subtracted back out:
+
+```
+recurring + budgets − (recurring inside a budgeted category)
+```
+
+The subtraction is shown as its own line rather than netted off silently,
+because otherwise the two figures above it would visibly fail to add up.
+
+Budget totals come from `household_wallet_totals`, not from `budgets`, so a
+personal wallet's budget still counts even though its rows are invisible — the
+same reason spend does.
+
 ### Recurring is a category's budget floor
 
 A budget bar shows the category's recurring total as a marked floor, because

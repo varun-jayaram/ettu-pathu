@@ -65,6 +65,32 @@ export default async function HomePage() {
   const incomeCents = sumCents(income)
   const leftCents = incomeCents - spentCents
 
+  /**
+   * What this month is expected to cost — the two committed things added up.
+   *
+   * Recurring and budgets OVERLAP, and adding them naively double-counts. A
+   * budget already contains its category's recurring floor: the Transport
+   * budget covers the Deutschlandticket, it is not on top of it. So the
+   * recurring that sits inside a budgeted category is subtracted back out.
+   *
+   * Budget totals come from the aggregate function rather than `budgets`, so a
+   * personal wallet's budget counts even though its rows are invisible here —
+   * the same reason spend does. Recurring comes from the rules this user can
+   * read, which is every rule in practice: only the joint wallet has them.
+   */
+  const recurringCents = sumCents(rules.filter((r) => r.active))
+  const budgetedCents = totals.reduce((t, w) => t + toCents(w.budgeted), 0)
+  const overlapCents = sumCents(
+    rules.filter(
+      (r) =>
+        r.active &&
+        budgets.some(
+          (b) => b.wallet_id === r.wallet_id && b.category_id === r.categories.id,
+        ),
+    ),
+  )
+  const expectedCents = recurringCents + budgetedCents - overlapCents
+
   const shortDate = (value: string) =>
     new Date(`${value}T00:00:00Z`).toLocaleDateString('en-GB', {
       day: 'numeric',
@@ -140,6 +166,58 @@ export default async function HomePage() {
           <p className="mt-1 text-xs text-neutral-500">money kept →</p>
         </Link>
       </div>
+
+      {/* What the month is expected to cost, as opposed to what it has cost so
+          far. Its own box because it answers a different question: not "how am
+          I doing" but "what am I committed to". Links to Plan, which is where
+          both halves of it are set. */}
+      {expectedCents > 0 && (
+        <Link
+          href="/budgets"
+          className="mt-3 block rounded-xl border border-neutral-200 p-4 hover:border-neutral-400 dark:border-neutral-800 dark:hover:border-neutral-600"
+        >
+          <p className="text-xs text-neutral-500">Expected expense</p>
+
+          <div className="mt-2 flex items-baseline justify-between">
+            <span className="text-sm text-neutral-500">↻ Recurring</span>
+            <span className="tabular-nums text-sm">{formatEur(recurringCents)}</span>
+          </div>
+          <div className="mt-1 flex items-baseline justify-between">
+            <span className="text-sm text-neutral-500">Budgets</span>
+            <span className="tabular-nums text-sm">{formatEur(budgetedCents)}</span>
+          </div>
+          {/* Shown rather than silently netted off: otherwise the two lines
+              above would visibly fail to add up to the total. */}
+          {overlapCents > 0 && (
+            <div className="mt-1 flex items-baseline justify-between">
+              <span className="text-sm text-neutral-500">
+                Recurring already inside a budget
+              </span>
+              <span className="tabular-nums text-sm text-neutral-500">
+                −{formatEur(overlapCents)}
+              </span>
+            </div>
+          )}
+
+          <div className="mt-2 flex items-baseline justify-between border-t border-neutral-200 pt-2 dark:border-neutral-800">
+            <span className="text-sm font-medium">Expected this month</span>
+            <span className="tabular-nums text-lg font-semibold">
+              {formatEur(expectedCents)}
+            </span>
+          </div>
+
+          <p className="mt-1 text-xs text-neutral-500">
+            {incomeCents > 0 && (
+              <>
+                {expectedCents > incomeCents
+                  ? `${formatEur(expectedCents - incomeCents)} more than came in · `
+                  : `${formatEur(incomeCents - expectedCents)} spare against income · `}
+              </>
+            )}
+            set it on Plan →
+          </p>
+        </Link>
+      )}
 
       {/* Sorted by how they are doing, so "where am I over?" is answered
           without reading every bar. One level only — a category budget is the
