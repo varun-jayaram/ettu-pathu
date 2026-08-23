@@ -1,3 +1,5 @@
+import { cache } from 'react'
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import {
   addDays,
@@ -259,8 +261,15 @@ export async function getIncome(
  * The current pay-cycle period: anchor day from settings, snapped to real
  * salary dates where they have been logged.
  */
-/** Everything getPeriod needs: the anchor, real paydays, and hand-set starts. */
-async function getPeriodOptions(limit = 24): Promise<PeriodOptions> {
+/**
+ * Everything getPeriod needs: the anchor, real paydays, and hand-set starts.
+ *
+ * Memoised per request. Since the month became app-wide, the layout's picker
+ * and the page itself both resolve the active period, and each resolution used
+ * to cost three queries — settings, salaries, period_starts. Without cache()
+ * every page load repeated all of them.
+ */
+const getPeriodOptions = cache(async (limit = 24): Promise<PeriodOptions> => {
   const supabase = await createClient()
 
   const [settings, salaries, starts] = await Promise.all([
@@ -280,19 +289,46 @@ async function getPeriodOptions(limit = 24): Promise<PeriodOptions> {
     salaryDates: (salaries.data ?? []).map((row) => row.received_on as string),
     starts,
   }
-}
+})
 
-export async function getCurrentPeriod(): Promise<Period> {
+export const getCurrentPeriod = cache(async (): Promise<Period> => {
   return getPeriod(todayIso(), await getPeriodOptions())
+})
+
+/**
+ * A named month's period, whether or not it has arrived. Lets September's
+ * budgets be set in August.
+ */
+export const getPeriodForMonthKey = cache(
+  async (month: string): Promise<Period> =>
+    getPeriodForMonth(month, todayIso(), await getPeriodOptions(60)),
+)
+
+/** The month the header picker has selected, or null for the live cycle. */
+export async function getSelectedMonth(): Promise<string | null> {
+  const store = await cookies()
+  const value = store.get('month')?.value
+  return /^\d{4}-\d{2}-01$/.test(value ?? '') ? value! : null
 }
 
 /**
- * A named month's period, whether or not it has arrived. This is what the Plan
- * tab's month picker resolves to, so September's budgets can be set in August.
+ * THE period every page should use. Honours the app-wide month picker, falling
+ * back to the live cycle when nothing is selected.
+ *
+ * `isLive` is what pages use to say so loudly. A month picker that silently
+ * reframes the dashboard is how you end up reading October's numbers and
+ * believing they are today's.
  */
-export async function getPeriodForMonthKey(month: string): Promise<Period> {
-  return getPeriodForMonth(month, todayIso(), await getPeriodOptions(60))
-}
+export const getActivePeriod = cache(
+  async (): Promise<Period & { isLive: boolean }> => {
+    const [selected, live] = await Promise.all([
+      getSelectedMonth(),
+      getCurrentPeriod(),
+    ])
+    if (!selected || selected === live.month) return { ...live, isLive: true }
+    return { ...(await getPeriodForMonthKey(selected)), isLive: false }
+  },
+)
 
 /**
  * The last `count` pay cycles, oldest first, including the current one.
@@ -301,10 +337,20 @@ export async function getPeriodForMonthKey(month: string): Promise<Period> {
  * same snapping rules as the live period — a cycle that moved because of a real
  * payday stays moved in the history.
  */
-export async function getRecentPeriods(count = 6): Promise<Period[]> {
+export async function getRecentPeriods(
+  count = 6,
+  /** Month to end on. Defaults to the live cycle. */
+  endMonth?: string | null,
+): Promise<Period[]> {
   const options = await getPeriodOptions(60)
   const periods: Period[] = []
-  let cursor = todayIso()
+
+  // Start from the LAST day of the ending cycle, so the walk includes it. Using
+  // today would silently truncate the trend when looking at a future month.
+  const last = endMonth
+    ? getPeriodForMonth(endMonth, todayIso(), options)
+    : getPeriod(todayIso(), options)
+  let cursor = last.to
 
   for (let i = 0; i < count; i++) {
     const period = getPeriod(cursor, options)

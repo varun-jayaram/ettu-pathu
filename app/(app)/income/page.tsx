@@ -1,5 +1,5 @@
 import { deleteIncome, setAnchorDay, updateIncome } from '../actions'
-import { getCurrentPeriod, getIncome, getSettings } from '@/lib/queries'
+import { getActivePeriod, getIncome, getSettings } from '@/lib/queries'
 import { formatEur, sumCents } from '@/lib/money'
 import { IncomeForm } from '@/components/income-form'
 import { ConfirmDelete } from '@/components/confirm-delete'
@@ -16,7 +16,7 @@ export default async function IncomePage({
   searchParams: Promise<{ added?: string }>
 }) {
   const params = await searchParams
-  const period = await getCurrentPeriod()
+  const period = await getActivePeriod()
 
   const [settings, periodIncome, recentIncome] = await Promise.all([
     getSettings(),

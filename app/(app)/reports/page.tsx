@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import {
-  getCurrentPeriod,
+  getActivePeriod,
   getExpenses,
   getHouseholdTotals,
   getIncome,
@@ -21,9 +21,11 @@ export default async function ReportsPage({
   searchParams: Promise<{ wallet?: string; view?: 'expenses' | 'savings' }>
 }) {
   const params = await searchParams
-  const [period, periods, wallets] = await Promise.all([
-    getCurrentPeriod(),
-    getRecentPeriods(6),
+  const period = await getActivePeriod()
+  const [periods, wallets] = await Promise.all([
+    // The trend ends on the month being viewed, not on today — otherwise
+    // stepping forward would leave the chart behind the headline numbers.
+    getRecentPeriods(6, period.isLive ? null : period.month),
     getWallets(),
   ])
 

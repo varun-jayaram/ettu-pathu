@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getPeriodStarts } from '@/lib/queries'
@@ -218,6 +219,36 @@ export async function deleteExpense(formData: FormData): Promise<void> {
 
   revalidatePath('/')
   revalidatePath('/expenses')
+}
+
+/**
+ * The month every tab is looking at.
+ *
+ * Held in a cookie rather than a URL parameter, because it is a MODE, not a
+ * page: switching from Home to Log must not drop it, and threading ?month=
+ * through every internal link would break the moment one link forgot. An empty
+ * value clears it and returns the whole app to the live cycle.
+ */
+export async function setMonth(formData: FormData): Promise<void> {
+  const month = String(formData.get('month') ?? '')
+  const store = await cookies()
+
+  if (/^\d{4}-\d{2}-01$/.test(month)) {
+    store.set('month', month, {
+      httpOnly: true,
+      sameSite: 'lax',
+      // A viewing preference, not a credential. Expires so a month picked and
+      // forgotten cannot silently frame the app weeks later.
+      maxAge: 60 * 60 * 24 * 30,
+      path: '/',
+    })
+  } else {
+    store.delete('month')
+  }
+
+  // 'layout' — every tab reads this, so revalidating one page would leave the
+  // others showing the previous month.
+  revalidatePath('/', 'layout')
 }
 
 /**

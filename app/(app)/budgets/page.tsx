@@ -8,11 +8,10 @@ import {
   updateRecurringRule,
 } from '../actions'
 import {
+  getActivePeriod,
   getBudgets,
   getCategories,
-  getCurrentPeriod,
   getExpenses,
-  getPeriodForMonthKey,
   getRecurringRules,
   getWallets,
 } from '@/lib/queries'
@@ -49,19 +48,15 @@ import {
 export default async function PlanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ wallet?: string; month?: string }>
+  searchParams: Promise<{ wallet?: string }>
 }) {
   const params = await searchParams
-  const live = await getCurrentPeriod()
 
-  // ?month= wins, so September is reachable in August. Anything unparseable
-  // falls back to the live cycle rather than erroring.
-  const month = /^\d{4}-\d{2}-01$/.test(params.month ?? '')
-    ? params.month!
-    : live.month
-  const period = month === live.month ? live : await getPeriodForMonthKey(month)
-  const { from, to } = period
-  const isLive = month === live.month
+  // The month comes from the header picker, shared with every other tab. Plan
+  // used to carry its own ?month= stepper; two pickers for one concept meant
+  // Home and Plan could disagree about which month you were looking at.
+  const period = await getActivePeriod()
+  const { from, to, month } = period
 
   // A month starts with NO budgets and full recurring — 0017. Recurring
   // carries itself; a budget is a decision about one month, and pre-filling it
@@ -74,9 +69,7 @@ export default async function PlanPage({
     getRecurringRules(),
   ])
 
-  const previousMonth = shiftMonthKey(month, -1)
   const nextMonth = shiftMonthKey(month, 1)
-  const walletParam = params.wallet ? `&wallet=${params.wallet}` : ''
   // The latest a cycle named for this month may start without ending after the
   // month is over. Mirrors the CHECK constraint in 0015.
   const latestStart = month
@@ -117,33 +110,11 @@ export default async function PlanPage({
     <>
       <h1 className="text-xl font-semibold tracking-tight">Plan</h1>
 
-      {/* Month stepper. Budgets belong to a month, so which month you are
-          editing has to be the most obvious thing on the page. */}
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <a
-          href={`/budgets?month=${previousMonth}${walletParam}`}
-          aria-label={`Go to ${monthLabel(previousMonth)}`}
-          className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm dark:border-neutral-700"
-        >
-          ←
-        </a>
-        <div className="min-w-0 flex-1 text-center">
-          <p className="truncate text-sm font-medium">{period.label}</p>
-          <p className="truncate text-xs text-neutral-500">
-            {period.from} – {period.to} · {period.daysTotal} days
-          </p>
-        </div>
-        <a
-          href={`/budgets?month=${nextMonth}${walletParam}`}
-          aria-label={`Go to ${monthLabel(nextMonth)}`}
-          className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm dark:border-neutral-700"
-        >
-          →
-        </a>
-      </div>
-
-      <p className="mt-2 text-xs text-neutral-500">
-        {isLive ? (
+      <p className="mt-1 text-sm text-neutral-500">
+        {period.label} · {period.from} – {period.to} · {period.daysTotal} days
+      </p>
+      <p className="mt-1 text-xs text-neutral-500">
+        {period.isLive ? (
           <>
             Live cycle · {period.daysLeft} days left, nothing carries over
             {period.snapped && ' · start moved to your actual payday'}
@@ -152,10 +123,8 @@ export default async function PlanPage({
         ) : (
           <>
             {period.from > today ? 'Not started yet' : 'Past cycle'} · set its
-            budgets here and they apply when it comes round.{' '}
-            <a href={`/budgets${params.wallet ? `?wallet=${params.wallet}` : ''}`} className="underline">
-              Back to {live.label}
-            </a>
+            budgets here and they apply when it comes round. Change month in the
+            header.
           </>
         )}
       </p>
@@ -164,7 +133,7 @@ export default async function PlanPage({
         {wallets.map((wallet) => (
           <a
             key={wallet.id}
-            href={`/budgets?wallet=${wallet.id}&month=${month}`}
+            href={`/budgets?wallet=${wallet.id}`}
             className={`rounded-lg border px-3 py-1.5 text-sm ${
               wallet.id === selected?.id
                 ? 'border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900'

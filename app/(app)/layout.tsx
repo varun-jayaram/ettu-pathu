@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { signOut } from './actions'
 import { DesktopNav, MobileNav } from '@/components/nav'
+import { MonthPicker } from '@/components/month-picker'
 import { ThemeToggle } from '@/components/theme-toggle'
 
 /**
@@ -46,6 +47,12 @@ export default async function AppLayout({
               </button>
             </form>
           </div>
+        </div>
+
+        {/* Its own row, full width: the month frames every tab, so it must not
+            compete for space with the nav and get truncated on a phone. */}
+        <div className="mx-auto flex max-w-5xl items-center justify-center gap-3 px-4 pb-3">
+          <MonthPicker />
         </div>
       </header>
 

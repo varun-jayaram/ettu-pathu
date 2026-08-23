@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import {
+  getActivePeriod,
   getBudgets,
   getCategories,
-  getCurrentPeriod,
   getExpenses,
   getHouseholdTotals,
   getIncome,
@@ -27,12 +27,12 @@ export default async function HomePage() {
   // the moment you look at them. Idempotent.
   await materializeRecurring()
 
-  const period = await getCurrentPeriod()
+  // The header's month, or the live cycle when none is picked. Every tab reads
+  // the same thing, so Home and Plan can never disagree about which month you
+  // are looking at.
+  const period = await getActivePeriod()
   const { from, to } = period
 
-  // Home always shows the LIVE cycle. The month picker lives on Plan alone, so
-  // there is no way to end up reading a future month's budgets here and think
-  // it is where you currently stand.
   const [wallets, expenses, budgets, categories, income, totals] = await Promise.all([
     getWallets(),
     getExpenses({ from, to, limit: 500 }),
@@ -70,9 +70,18 @@ export default async function HomePage() {
     <>
       <h1 className="text-xl font-semibold tracking-tight">{period.label}</h1>
       <p className="mt-1 text-sm text-neutral-500">
-        {shortDate(from)} – {shortDate(to)} · {period.daysLeft} days left
+        {shortDate(from)} – {shortDate(to)}
+        {/* "2 days left" is meaningless for a cycle that has not started or is
+            already over, so it is only shown for the live one. */}
+        {period.isLive && ` · ${period.daysLeft} days left`}
         {period.snapped && ' · from your actual payday'}
       </p>
+      {!period.isLive && (
+        <p className="mt-2 rounded-lg border border-amber-500/40 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-500">
+          Not the live cycle — you&apos;re viewing {period.label}. Use{' '}
+          <span className="font-medium">Today</span> in the header to go back.
+        </p>
+      )}
 
       {/* Income eight, expenses ten — the point of the app, so it leads. */}
       {incomeCents > 0 && (

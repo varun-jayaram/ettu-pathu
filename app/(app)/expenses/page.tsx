@@ -1,5 +1,11 @@
 import { deleteExpense, updateExpense } from '../actions'
-import { getCategories, getExpenses, getWallets, type ExpenseRow } from '@/lib/queries'
+import {
+  getActivePeriod,
+  getCategories,
+  getExpenses,
+  getWallets,
+  type ExpenseRow,
+} from '@/lib/queries'
 import { formatEur, sumCents, toCents } from '@/lib/money'
 import { ConfirmDelete } from '@/components/confirm-delete'
 import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
@@ -14,10 +20,25 @@ export default async function ExpensesPage({
   searchParams: Promise<{ wallet?: string; q?: string; added?: string }>
 }) {
   const params = await searchParams
+  const period = await getActivePeriod()
+
+  /**
+   * The log follows the header's month like every other tab — EXCEPT while
+   * searching. "Where did that petrol charge go?" is a question about all of
+   * history, and scoping it to the month on screen would answer "nowhere" for
+   * anything outside it, which reads as data loss rather than as a filter.
+   */
+  const searching = Boolean(params.q)
+
   const [wallets, categories, expenses] = await Promise.all([
     getWallets(),
     getCategories(),
-    getExpenses({ walletId: params.wallet, search: params.q, limit: 200 }),
+    getExpenses({
+      walletId: params.wallet,
+      search: params.q,
+      ...(searching ? {} : { from: period.from, to: period.to }),
+      limit: 200,
+    }),
   ])
 
   const spendCents = sumCents(expenses)
@@ -34,6 +55,15 @@ export default async function ExpensesPage({
         <h1 className="text-xl font-semibold tracking-tight">Expenses</h1>
         <span className="text-sm text-neutral-500">{expenses.length} shown</span>
       </div>
+      <p className="mt-1 text-sm text-neutral-500">
+        {searching ? (
+          <>Searching every cycle, not just {period.label}</>
+        ) : (
+          <>
+            {period.label} · {period.from} – {period.to}
+          </>
+        )}
+      </p>
 
       {params.added && (
         <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 dark:bg-green-950 dark:text-green-300">
