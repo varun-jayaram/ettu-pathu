@@ -196,7 +196,7 @@ export default async function HomePage() {
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         <Link
-          href="/reports?view=expenses"
+          href="/reports"
           className="rounded-xl border border-neutral-200 p-4 hover:border-neutral-400 dark:border-neutral-800 dark:hover:border-neutral-600"
         >
           <p className="text-xs text-neutral-500">Expenses</p>
@@ -206,7 +206,7 @@ export default async function HomePage() {
           <p className="mt-1 text-xs text-neutral-500">money spent →</p>
         </Link>
         <Link
-          href="/reports?view=savings"
+          href="/reports"
           className="rounded-xl border border-neutral-200 p-4 hover:border-neutral-400 dark:border-neutral-800 dark:hover:border-neutral-600"
         >
           <p className="text-xs text-neutral-500">Savings</p>

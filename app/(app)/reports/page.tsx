@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import {
   getActivePeriod,
   getBudgets,
@@ -24,13 +23,20 @@ import {
  * Reports. Everything is scoped to the pay cycle, and every euro that leaves
  * counts — savings included. Spending is split by whether a recurring rule
  * created the row, which is a fact about the data rather than a label.
+ *
+ * ALWAYS the whole household, always every category. The page used to carry
+ * two rows of filters — Everything/Expenses/Savings above All/Varun/Shriya/
+ * Joint — and they are gone. Reports answers one question, "where did the
+ * money go this cycle", and every figure on the page now answers it about the
+ * same set of expenses. With the filters in place the hero number silently
+ * changed meaning between "left" and "spent", the trend chart switched
+ * between household totals and readable rows, and the private-wallet lump
+ * appeared and vanished. One page, one question, no modes.
+ *
+ * The narrower questions still have homes: per-wallet totals are on Home
+ * under "By wallet", and savings has its own box there.
  */
-export default async function ReportsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ wallet?: string; view?: 'expenses' | 'savings' }>
-}) {
-  const params = await searchParams
+export default async function ReportsPage() {
   const period = await getActivePeriod()
   const [periods, wallets] = await Promise.all([
     // The trend ends on the month being viewed, not on today — otherwise
@@ -42,7 +48,7 @@ export default async function ReportsPage({
   const span = { from: periods[0].from, to: period.to }
   const [allExpenses, allIncome, totals, budgets, rules, cycleTotals] =
     await Promise.all([
-    getExpenses({ ...span, walletId: params.wallet, limit: 2000 }),
+    getExpenses({ ...span, limit: 2000 }),
     getIncome({ ...span, limit: 500 }),
     getHouseholdTotals(period.from, period.to, period.month),
     // Only to draw a reference line on a category's chart — what the spending
@@ -61,26 +67,16 @@ export default async function ReportsPage({
     (t) => !wallets.some((w) => w.id === t.wallet_id) && toCents(t.spent) > 0,
   )
 
-  // `view` narrows to money spent vs money kept. Savings still counts in every
-  // total — this only chooses what the breakdowns are about.
-  const view = params.view
-  const matchesView = (e: { categories: { is_savings: boolean } }) =>
-    view === 'savings' ? e.categories.is_savings
-    : view === 'expenses' ? !e.categories.is_savings
-    : true
-
   const inCycle = allExpenses.filter(
-    (e) => e.spent_on >= period.from && e.spent_on <= period.to && matchesView(e),
+    (e) => e.spent_on >= period.from && e.spent_on <= period.to,
   )
   const spend = inCycle
   const recurring = inCycle.filter((e) => e.recurring_rule_id)
 
-  // Household figure when unfiltered; only what is visible when a wallet or
-  // view filter is applied, since those are explicitly narrower questions.
+  // Always the household figure: Reports shows everything, every wallet.
   const visibleCents = sumCents(spend)
   const hiddenCents = hiddenWallets.reduce((t, w) => t + toCents(w.spent), 0)
-  const spendCents =
-    params.wallet || view ? visibleCents : visibleCents + hiddenCents
+  const spendCents = visibleCents + hiddenCents
   const incomeCents = sumCents(
     allIncome.filter((i) => i.received_on >= period.from && i.received_on <= period.to),
   )
@@ -123,29 +119,19 @@ export default async function ReportsPage({
    * else the recurring floor, else nothing. Same order Plan uses — a category
    * with rules and no budget is still planned, just not with a budget.
    *
-   * Summed across wallets unless one is selected, because the bar above it is
-   * a household figure. In practice that is the joint wallet's number: a
-   * personal wallet takes a single wallet-scope budget, never a per-category
-   * one.
+   * Summed across wallets, because the bar above it is a household figure. In
+   * practice that is the joint wallet's number: a personal wallet takes a
+   * single wallet-scope budget, never a per-category one.
    */
   const categoryReference = (categoryId: string) => {
     const budgetCents = budgets
-      .filter(
-        (b) =>
-          b.category_id === categoryId &&
-          (!params.wallet || b.wallet_id === params.wallet),
-      )
+      .filter((b) => b.category_id === categoryId)
       .reduce((total, b) => total + toCents(b.amount), 0)
     if (budgetCents > 0) {
       return { cents: budgetCents, label: 'budget' }
     }
     const floorCents = sumCents(
-      rules.filter(
-        (r) =>
-          r.active &&
-          r.categories.id === categoryId &&
-          (!params.wallet || r.wallet_id === params.wallet),
-      ),
+      rules.filter((r) => r.active && r.categories.id === categoryId),
     )
     return floorCents > 0
       ? { cents: floorCents, label: '↻ recurring' }
@@ -202,14 +188,12 @@ export default async function ReportsPage({
     // NO `items`, deliberately — that is what makes the row non-expandable.
     // There is nothing to expand even in principle: this figure came from the
     // aggregate-only totals function, which never returns rows. See PROJECT.md.
-    ...(params.wallet || view
-      ? []
-      : hiddenWallets.map((w) => ({
-          id: w.wallet_id,
-          label: `${w.wallet_name} (personal)`,
-          cents: toCents(w.spent),
-          hint: 'private · total only',
-        }))),
+    ...hiddenWallets.map((w) => ({
+      id: w.wallet_id,
+      label: `${w.wallet_name} (personal)`,
+      cents: toCents(w.spent),
+      hint: 'private · total only',
+    })),
   ].sort((a, b) => b.cents - a.cents)
 
   // --- Trend across cycles ---------------------------------------------------
@@ -219,14 +203,7 @@ export default async function ReportsPage({
       allIncome.filter((i) => i.received_on >= cycle.from && i.received_on <= cycle.to),
     ),
     // Household-wide, so the trend matches Home rather than one person's view.
-    outCents:
-      params.wallet || view
-        ? sumCents(
-            allExpenses.filter(
-              (e) => e.spent_on >= cycle.from && e.spent_on <= cycle.to,
-            ),
-          )
-        : cycleTotals[index].reduce((t, w) => t + toCents(w.spent), 0),
+    outCents: cycleTotals[index].reduce((t, w) => t + toCents(w.spent), 0),
   }))
 
   return (
@@ -238,81 +215,24 @@ export default async function ReportsPage({
         {period.label} cycle · {period.daysElapsed} of {period.daysTotal} days
       </p>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        {([
-          ['', 'Everything'],
-          ['expenses', 'Expenses'],
-          ['savings', 'Savings'],
-        ] as const).map(([value, label]) => {
-          const query = new URLSearchParams()
-          if (params.wallet) query.set('wallet', params.wallet)
-          if (value) query.set('view', value)
-          const active = (params.view ?? '') === value
-          return (
-            <Link
-              key={label}
-              href={`/reports${query.toString() ? `?${query}` : ''}`}
-              className={`rounded-lg border px-3 py-1.5 text-sm ${
-                active
-                  ? 'border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900'
-                  : 'border-neutral-300 dark:border-neutral-700'
-              }`}
-            >
-              {label}
-            </Link>
-          )
-        })}
-      </div>
-
-      <div className="mt-2 flex flex-wrap gap-2">
-        <Link
-          href={params.view ? `/reports?view=${params.view}` : '/reports'}
-          className={`rounded-lg border px-3 py-1.5 text-sm ${
-            !params.wallet
-              ? 'border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900'
-              : 'border-neutral-300 dark:border-neutral-700'
-          }`}
-        >
-          All
-        </Link>
-        {wallets.map((wallet) => (
-          <Link
-            key={wallet.id}
-            href={`/reports?wallet=${wallet.id}${params.view ? `&view=${params.view}` : ''}`}
-            className={`rounded-lg border px-3 py-1.5 text-sm ${
-              params.wallet === wallet.id
-                ? 'border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900'
-                : 'border-neutral-300 dark:border-neutral-700'
-            }`}
-          >
-            {wallet.name}
-          </Link>
-        ))}
-      </div>
+      {/* No view or wallet filter here — see the note at the top of the
+          file. */}
 
       {/* Hero: the one number the page leads with. */}
       <section className="mt-6">
-        <p className="text-xs text-neutral-500">
-          {view === 'savings'
-            ? 'Saved this cycle'
-            : params.wallet || view === 'expenses'
-              ? 'Spent this cycle'
-              : 'Left this cycle'}
-        </p>
+        <p className="text-xs text-neutral-500">Left this cycle</p>
         <p
           className={`mt-1 text-5xl font-semibold tabular-nums ${
-            !params.wallet && netCents < 0 ? 'text-red-600' : ''
+            netCents < 0 ? 'text-red-600' : ''
           }`}
         >
-          {formatEur(params.wallet || view ? spendCents : netCents)}
+          {formatEur(netCents)}
         </p>
-        {!params.wallet && !view && (
-          <p className="mt-1 text-sm text-neutral-500">
-            {formatEur(incomeCents)} in · {formatEur(spendCents)} out
-            {recurringCents > 0 && ` · ${formatEur(recurringCents)} of it recurring`}
-          </p>
-        )}
-        {!params.wallet && !view && netCents < 0 && (
+        <p className="mt-1 text-sm text-neutral-500">
+          {formatEur(incomeCents)} in · {formatEur(spendCents)} out
+          {recurringCents > 0 && ` · ${formatEur(recurringCents)} of it recurring`}
+        </p>
+        {netCents < 0 && (
           <p className="mt-1 text-sm text-red-600">
             வரவு எட்டணா, செலவு பத்தணா — out is ahead of in this cycle.
           </p>
@@ -331,20 +251,18 @@ export default async function ReportsPage({
       {visibleCents > 0 && (
         <section className="mt-6 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="text-sm font-medium">
-              {view === 'savings' ? 'Saved so far' : 'Spent so far'}
-            </h2>
+            <h2 className="text-sm font-medium">Spent so far</h2>
             <span className="text-xs text-neutral-500">running total</span>
           </div>
           <div className="mt-2">
             <CumulativeLine
-              label={view === 'savings' ? 'Saved this cycle' : 'Spent this cycle'}
+              label="Spent this cycle"
               days={dailySeries(spend)}
               daysElapsed={period.daysElapsed}
-              referenceCents={!params.wallet && !view ? incomeCents : 0}
+              referenceCents={incomeCents}
               referenceLabel="income"
               note={
-                !params.wallet && !view && hiddenCents > 0
+                hiddenCents > 0
                   ? `Excludes ${formatEur(hiddenCents)} from a private wallet — a total without dates, so it cannot be drawn.`
                   : undefined
               }
