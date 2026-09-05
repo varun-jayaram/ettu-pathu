@@ -327,6 +327,34 @@ so every one of its categories would otherwise land here — and the per-categor
 detail comes from `expenses`, which RLS already limits to rows this user may
 read.
 
+### Reports: running totals, not projections
+
+**A category's chart is CUMULATIVE, and that is the whole point.** Expenses are
+discrete events — six shops in thirty-one days. A line through daily amounts
+dives to zero and back twenty-five times, drawing spending on the Tuesdays
+nothing was spent. A running total only ever rises, every day carries a real
+value, and the slope *is* the daily rate. The dashed reference line is the
+category's budget, or its recurring floor when no budget was set — the same
+order of precedence Plan uses.
+
+It replaced a sentence reading "At this rate you'll finish the cycle around
+2.480,32 €". A projection stated to the cent invites belief in a precision it
+does not have: it is one number, derived from days elapsed, that swings wildly
+in the first week and stops being news in the last. The line shows the rate and
+lets you extend it yourself.
+
+**The whole-cycle chart draws only what this user may read.** It sums
+`expenses`, so a private wallet's contribution is missing from it while still
+counting in the headline total above. The two genuinely differ, and the chart
+says so rather than quietly reconciling them — the aggregate function returns
+totals with no dates by design, so that money cannot be drawn and never will
+be. Same reason the private lump on "Where it went" has no `items` and cannot
+be expanded.
+
+Charts live in one file, are server-rendered, and ship no client JS. The
+expansion is a `<details>`, so it is keyboard-operable for free and works with
+JS disabled.
+
 ### Cycle dates are adjustable, within two rules
 
 **Set on the Income tab**, because income is what defines the cycle. It replaced

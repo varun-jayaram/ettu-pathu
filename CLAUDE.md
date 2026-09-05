@@ -78,4 +78,8 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
 - **Money is `numeric(12,2)`**, never float. Amounts are always positive; the
   wallet and category carry the meaning.
 - **Server Components read, Server Actions write**, then `revalidatePath`.
-- Charts use Recharts — load the `dataviz` skill before writing chart code.
+- **Charts are hand-built** in `components/charts.tsx` — server-rendered
+  HTML/CSS and inline SVG, no charting library and no client JS. Recharts is
+  not a dependency and adding one is a decision, not a detail. Load the
+  `dataviz` skill before writing chart code; the validated palette lives in
+  `VizStyles`.

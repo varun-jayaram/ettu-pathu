@@ -1,14 +1,18 @@
 import Link from 'next/link'
 import {
   getActivePeriod,
+  getBudgets,
   getExpenses,
   getHouseholdTotals,
   getIncome,
   getRecentPeriods,
+  getRecurringRules,
   getWallets,
 } from '@/lib/queries'
+import { addDays } from '@/lib/period'
 import { formatEur, sumCents, toCents } from '@/lib/money'
 import {
+  CumulativeLine,
   CycleColumns,
   GroupBars,
   VizStyles,
@@ -36,15 +40,20 @@ export default async function ReportsPage({
   ])
 
   const span = { from: periods[0].from, to: period.to }
-  const [allExpenses, allIncome, totals, cycleTotals] = await Promise.all([
+  const [allExpenses, allIncome, totals, budgets, rules, cycleTotals] =
+    await Promise.all([
     getExpenses({ ...span, walletId: params.wallet, limit: 2000 }),
     getIncome({ ...span, limit: 500 }),
     getHouseholdTotals(period.from, period.to, period.month),
+    // Only to draw a reference line on a category's chart — what the spending
+    // was supposed to stay under, or the recurring floor when nobody set one.
+    getBudgets(period.month),
+    getRecurringRules(),
     // Each cycle's budget total must come from that cycle's own month, or a
     // trend line would compare this month's spend against every month's budgets
     // added together.
     Promise.all(periods.map((c) => getHouseholdTotals(c.from, c.to, c.month))),
-  ])
+    ])
 
   // Wallets this user cannot read row-by-row. They appear as a single lump so
   // the chart totals match Home, without leaking a category. See PROJECT.md.
@@ -88,9 +97,64 @@ export default async function ReportsPage({
       timeZone: 'UTC',
     })
 
+  // --- Day by day ------------------------------------------------------------
+  /**
+   * Every date in the cycle, including the ones nothing was spent on. A series
+   * built only from the days that have expenses would space them evenly and
+   * silently rewrite the calendar — four shops in one week and one in the next
+   * would look like five evenly-paced weeks.
+   */
+  const cycleDays = Array.from({ length: period.daysTotal }, (_, i) =>
+    addDays(period.from, i),
+  )
+  const dailySeries = (rows: typeof spend) => {
+    const byDay = new Map<string, number>()
+    for (const expense of rows) {
+      byDay.set(
+        expense.spent_on,
+        (byDay.get(expense.spent_on) ?? 0) + toCents(expense.amount),
+      )
+    }
+    return cycleDays.map((date) => ({ date, cents: byDay.get(date) ?? 0 }))
+  }
+
+  /**
+   * What a category's line is measured against: the budget if one was set,
+   * else the recurring floor, else nothing. Same order Plan uses — a category
+   * with rules and no budget is still planned, just not with a budget.
+   *
+   * Summed across wallets unless one is selected, because the bar above it is
+   * a household figure. In practice that is the joint wallet's number: a
+   * personal wallet takes a single wallet-scope budget, never a per-category
+   * one.
+   */
+  const categoryReference = (categoryId: string) => {
+    const budgetCents = budgets
+      .filter(
+        (b) =>
+          b.category_id === categoryId &&
+          (!params.wallet || b.wallet_id === params.wallet),
+      )
+      .reduce((total, b) => total + toCents(b.amount), 0)
+    if (budgetCents > 0) {
+      return { cents: budgetCents, label: 'budget' }
+    }
+    const floorCents = sumCents(
+      rules.filter(
+        (r) =>
+          r.active &&
+          r.categories.id === categoryId &&
+          (!params.wallet || r.wallet_id === params.wallet),
+      ),
+    )
+    return floorCents > 0
+      ? { cents: floorCents, label: '↻ recurring' }
+      : { cents: 0, label: undefined }
+  }
+
   const byCategory = new Map<
     string,
-    { label: string; cents: number; items: BarItem[] }
+    { label: string; cents: number; items: BarItem[]; rows: typeof spend }
   >()
   for (const expense of spend) {
     const category = expense.categories
@@ -98,8 +162,10 @@ export default async function ReportsPage({
       label: `${category.icon ?? ''} ${category.name}`.trim(),
       cents: 0,
       items: [],
+      rows: [] as typeof spend,
     }
     entry.cents += Math.round(Number(expense.amount) * 100)
+    entry.rows.push(expense)
     // The rows that make up the bar, so a total can be checked rather than
     // taken on trust. Newest first, matching the Log.
     entry.items.push({
@@ -114,7 +180,22 @@ export default async function ReportsPage({
     // `items` are already newest-first: getExpenses orders by spent_on desc,
     // and they were pushed in that order. Re-sorting here by the row id would
     // order by UUID, which is no order at all.
-    ...[...byCategory.entries()].map(([id, value]) => ({ id, ...value })),
+    ...[...byCategory.entries()].map(([id, { rows, ...value }]) => {
+      const reference = categoryReference(id)
+      return {
+        id,
+        ...value,
+        chart: (
+          <CumulativeLine
+            label={value.label}
+            days={dailySeries(rows)}
+            daysElapsed={period.daysElapsed}
+            referenceCents={reference.cents}
+            referenceLabel={reference.label}
+          />
+        ),
+      }
+    }),
     // One lump row per wallet whose detail is private to the other person.
     // Without these the bars would not add up to the household total.
     //
@@ -147,9 +228,6 @@ export default async function ReportsPage({
           )
         : cycleTotals[index].reduce((t, w) => t + toCents(w.spent), 0),
   }))
-
-  const dailyRate = period.daysElapsed > 0 ? spendCents / period.daysElapsed : 0
-  const projected = Math.round(dailyRate * period.daysTotal)
 
   return (
     <>
@@ -241,12 +319,38 @@ export default async function ReportsPage({
         )}
       </section>
 
-      {spendCents > 0 && period.daysElapsed < period.daysTotal && (
-        <p className="mt-4 rounded-xl border border-neutral-200 p-3 text-sm text-neutral-500 dark:border-neutral-800">
-          At this rate you&apos;ll finish the cycle around{' '}
-          <span className="font-medium tabular-nums">{formatEur(projected)}</span> of
-          total spend.
-        </p>
+      {/* The super graph. Sits where "at this rate you'll finish around X"
+          used to: the same question, answered by a slope you can extend
+          yourself instead of a projected number stated to the cent.
+
+          The line can only be drawn from rows this user may READ, so when a
+          private wallet is contributing to the headline total the two
+          genuinely differ. Said out loud rather than quietly reconciled — the
+          aggregate function returns totals with no dates, by design, so there
+          is no way to draw that money and there never will be. */}
+      {visibleCents > 0 && (
+        <section className="mt-6 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-sm font-medium">
+              {view === 'savings' ? 'Saved so far' : 'Spent so far'}
+            </h2>
+            <span className="text-xs text-neutral-500">running total</span>
+          </div>
+          <div className="mt-2">
+            <CumulativeLine
+              label={view === 'savings' ? 'Saved this cycle' : 'Spent this cycle'}
+              days={dailySeries(spend)}
+              daysElapsed={period.daysElapsed}
+              referenceCents={!params.wallet && !view ? incomeCents : 0}
+              referenceLabel="income"
+              note={
+                !params.wallet && !view && hiddenCents > 0
+                  ? `Excludes ${formatEur(hiddenCents)} from a private wallet — a total without dates, so it cannot be drawn.`
+                  : undefined
+              }
+            />
+          </div>
+        </section>
       )}
 
       <section className="mt-8">
