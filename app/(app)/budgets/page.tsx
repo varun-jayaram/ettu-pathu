@@ -24,6 +24,16 @@ import {
   todayIso,
 } from '@/lib/period'
 
+/** One category as Plan shows it: what it costs, and what plan it has. */
+type PlanRow = {
+  category: Awaited<ReturnType<typeof getCategories>>[number]
+  catSpend: number
+  catBudget: Awaited<ReturnType<typeof getBudgets>>[number] | undefined
+  catCents: number
+  catRules: Awaited<ReturnType<typeof getRecurringRules>>
+  catRecurringCents: number
+}
+
 /**
  * Plan — the two ways money is committed ahead of time.
  *
@@ -96,6 +106,222 @@ export default async function PlanPage({
   )
   const notYetDue = recurringMonthly - recurringLanded
   const today = todayIso()
+
+  /**
+   * One category's row. Lifted out of the list so the three groups below can
+   * all render it — they differ in what they mean, not in what they look like.
+   */
+  function planRow({
+    category,
+    catSpend,
+    catBudget,
+    catCents,
+    catRules,
+    catRecurringCents,
+  }: PlanRow) {
+    return (
+      <section key={category.id}>
+        {/* Every category gets a bar, budgeted or not. An unset budget is
+            measured against whatever plan does exist — the recurring floor, or
+            0,00 € — instead of the row shrinking to a line of grey text that
+            is easy to skim past. */}
+        <BudgetBar
+          label={`${category.icon ?? ''} ${category.name}`.trim()}
+          spentCents={catSpend}
+          budgetCents={catCents}
+          floorCents={catRecurringCents}
+          budgetSet={Boolean(catBudget)}
+        />
+
+        {/* The floor, broken down where you set the budget — so
+            "why is the minimum 89,64?" is answered in place rather
+            than by scrolling up to the Recurring list and adding
+            three rules together yourself.
+
+            <details> keeps this free of client JS and keyboard
+            operable, same as the Reports bars. */}
+        {catRules.length > 0 && (
+          <details className="group mt-1">
+            <summary className="cursor-pointer list-none text-xs text-neutral-500 hover:opacity-80">
+              {/* With no budget the bar above has already said the total — the
+                  breakdown only has to offer the rules behind it. */}
+              {catCents > 0 ? (
+                <>
+                  ↻ {formatEur(catRecurringCents)} recurring
+                  {catRules.length > 1 && ` · ${catRules.length} rules`}
+                </>
+              ) : (
+                <>
+                  ↻ {catRules.length === 1 ? 'the rule' : `${catRules.length} rules`}{' '}
+                  behind it
+                </>
+              )}
+              <span className="group-open:hidden"> · show</span>
+              <span className="hidden group-open:inline"> · hide</span>
+            </summary>
+
+            <ul className="mt-1 space-y-1 border-l border-neutral-200 pl-3 dark:border-neutral-800">
+              {catRules.map((rule) => (
+                <li
+                  key={rule.id}
+                  className="flex items-baseline justify-between gap-3"
+                >
+                  <span className="min-w-0 truncate text-xs text-neutral-500">
+                    {rule.note ?? rule.categories.name}
+                    <span className="ml-1.5 text-neutral-400">
+                      day {rule.day_of_month}
+                    </span>
+                  </span>
+                  <span className="shrink-0 tabular-nums text-xs">
+                    {formatEur(toCents(rule.amount))}
+                  </span>
+                </li>
+              ))}
+              {/* Only worth restating when there is more than one to
+                  add up. */}
+              {catRules.length > 1 && (
+                <li className="flex items-baseline justify-between gap-3 border-t border-neutral-200 pt-1 dark:border-neutral-800">
+                  <span className="text-xs font-medium">Total</span>
+                  <span className="shrink-0 tabular-nums text-xs font-medium">
+                    {formatEur(catRecurringCents)}
+                  </span>
+                </li>
+              )}
+            </ul>
+          </details>
+        )}
+
+        {/* ConfirmDelete renders its own <form>, so it must be a
+            SIBLING of this one. Nested forms are invalid HTML: the
+            parser closes the outer form at the inner one, orphaning
+            this Save button so it silently stops submitting. */}
+        <div className="mt-2 flex items-center gap-2">
+          <form action={setBudget} className="flex min-w-0 flex-1 gap-2">
+            <input type="hidden" name="wallet_id" value={selected?.id ?? ''} />
+      <input type="hidden" name="period_month" value={month} />
+            <input type="hidden" name="category_id" value={category.id} />
+            <input
+              name="amount"
+              inputMode="decimal"
+              type="text"
+              // The recurring floor is the smallest budget that can
+              // actually be met, so it is the obvious starting point.
+              placeholder={
+                catRecurringCents > 0
+                  ? `At least ${formatEur(catRecurringCents)}`
+                  : 'Set a monthly budget…'
+              }
+              defaultValue={
+                catBudget ? Number(catBudget.amount).toFixed(2) : ''
+              }
+              className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
+            />
+            <button
+              type="submit"
+              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700"
+            >
+              Save
+            </button>
+          </form>
+          {catBudget && (
+            <ConfirmDelete
+              action={deleteBudget}
+              id={catBudget.id}
+              title={`${category.name} budget`}
+              detail={`${selected?.name} · removes the budget, not the spending`}
+              amount={formatEur(catCents)}
+            />
+          )}
+        </div>
+
+        {/* Which Home box this category lands in. Purely a display
+            split — savings still counts as spending. */}
+        <form action={toggleCategorySavings} className="mt-1">
+          <input type="hidden" name="id" value={category.id} />
+          <input
+            type="hidden"
+            name="is_savings"
+            value={String(category.is_savings)}
+          />
+          <button
+            type="submit"
+            className={`text-xs ${
+              category.is_savings
+                ? 'text-neutral-900 dark:text-white'
+                : 'text-neutral-400'
+            }`}
+          >
+            {category.is_savings ? '☑' : '☐'} counts as savings
+          </button>
+        </form>
+      </section>
+    )
+  }
+
+  /**
+   * Every category, split by WHICH KIND OF PLAN it has — the same two forms
+   * money is committed in, applied as a filing system.
+   *
+   *   IN PLAN         a budget was set for this month.
+   *   RECURRING ONLY  no budget, but rules commit money here anyway. Planned;
+   *                   just not planned with a budget. Rent lives here.
+   *   NOT IN PLAN     neither. Its budget is read as 0,00 €, so anything spent
+   *                   is spending nobody accounted for. This is the group
+   *                   Home surfaces.
+   *
+   * Nothing is hidden — an unbudgeted category used to shrink to one line of
+   * grey text, which is how spending stayed invisible in the categories least
+   * likely to have been thought about.
+   */
+  const planRows: PlanRow[] = categories.map((category) => {
+    const catBudget = budgets.find(
+      (b) => b.wallet_id === selected?.id && b.category_id === category.id,
+    )
+    // Rules on this category are why money lands here whether or not a budget
+    // exists — worth saying, since it explains a bar that fills itself in.
+    // SUMMED, not the first match: Insurance and Internet & mobile each carry
+    // three separate rules.
+    const catRules = activeRules.filter((r) => r.categories.id === category.id)
+    return {
+      category,
+      catSpend: sumCents(
+        walletExpenses.filter((e) => e.categories.id === category.id),
+      ),
+      catBudget,
+      catCents: catBudget ? toCents(catBudget.amount) : 0,
+      catRules,
+      catRecurringCents: sumCents(catRules),
+    }
+  })
+
+  const planGroups = [
+    {
+      key: 'budgeted',
+      title: 'In plan',
+      tone: 'text-neutral-500',
+      blurb: `A budget set for ${period.label}.`,
+      rows: planRows.filter((r) => r.catBudget),
+    },
+    {
+      key: 'recurring',
+      title: 'Recurring only',
+      tone: 'text-neutral-500',
+      blurb:
+        'No budget, but a rule commits money here every month. The recurring amount is the plan — set a budget to allow for more.',
+      rows: planRows.filter((r) => !r.catBudget && r.catRules.length > 0),
+    },
+    {
+      key: 'unplanned',
+      title: 'Not in plan',
+      tone: 'text-amber-600',
+      blurb:
+        'No budget and nothing recurring, so these count as 0,00 €. Anything spent here is spending nobody planned for.',
+      rows: planRows.filter((r) => !r.catBudget && r.catRules.length === 0),
+    },
+  ].map((group) => ({
+    ...group,
+    spentCents: group.rows.reduce((total, r) => total + r.catSpend, 0),
+  }))
 
   return (
     <>
@@ -306,24 +532,20 @@ export default async function PlanPage({
           <h2 className="mt-8 text-sm font-medium">Budget</h2>
           <p className="mt-1 text-xs text-neutral-500">
             One number for the whole wallet — your spending money this cycle. No
-            categories to keep up to date.
+            categories to keep up to date. Until you set it, it counts as{' '}
+            {formatEur(0)}.
           </p>
 
           <div className="mt-4">
-            {walletBudgetCents > 0 ? (
-              <BudgetBar
-                label={`${selected?.name}'s budget`}
-                spentCents={walletSpentCents}
-                budgetCents={walletBudgetCents}
-              />
-            ) : (
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-sm font-medium">{selected?.name}</span>
-                <span className="tabular-nums text-xs text-neutral-500">
-                  {formatEur(walletSpentCents)} spent · no budget
-                </span>
-              </div>
-            )}
+            {/* Always a bar, budget or not. An unset budget is read as 0,00 €
+                and labelled as assumed, so "no budget" is a number you can see
+                yourself being over rather than a row that quietly opts out. */}
+            <BudgetBar
+              label={`${selected?.name}'s budget`}
+              spentCents={walletSpentCents}
+              budgetCents={walletBudgetCents}
+              budgetSet={Boolean(walletBudget)}
+            />
 
             <div className="mt-2 flex items-center gap-2">
               <form action={setBudget} className="flex min-w-0 flex-1 gap-2">
@@ -368,168 +590,35 @@ export default async function PlanPage({
           <h2 className="mt-8 text-sm font-medium">Budgets</h2>
           <p className="mt-1 text-xs text-neutral-500">
             What you&apos;d ideally spend, knowing you might not — groceries,
-            petrol, eating out, films. One number per category, and only the
-            categories you actually want to watch. Leave the rest blank.
+            petrol, eating out, films. One number per category.
           </p>
-          {/* Each month is set deliberately — nothing is copied from last
-              month, so an empty list means "not decided yet", never "zero". */}
+          {/* Every category is listed, budgeted or not. Hiding the unbudgeted
+              ones hid the spending in them too: the categories most worth
+              seeing are the ones nobody has decided about yet. */}
+          <p className="mt-1 text-xs text-neutral-500">
+            Every category is shown, grouped by what plan it has. One with
+            neither a budget nor a recurring rule counts as {formatEur(0)} —
+            anything spent there is unplanned, and marked amber.
+          </p>
           <p className="mt-1 text-xs text-neutral-500">
             Set for {period.label} only. Recurring above already repeats every
-            month on its own; budgets don&apos;t, so each month starts blank.
+            month on its own; budgets don&apos;t, so a fresh month has
+            everything in Not in plan until you fill it in.
           </p>
 
-          <div className="mt-4 space-y-5">
-            {categories.map((category) => {
-              const catSpend = sumCents(
-                walletExpenses.filter((e) => e.categories.id === category.id),
-              )
-              const catBudget = budgets.find(
-                (b) => b.wallet_id === selected?.id && b.category_id === category.id,
-              )
-              const catCents = catBudget ? toCents(catBudget.amount) : 0
-              // Rules on this category are why money lands here whether or not
-              // a budget exists — worth saying, since it explains a bar that
-              // fills itself in. SUMMED, not the first match: Insurance and
-              // Internet & mobile each carry three separate rules.
-              const catRules = activeRules.filter(
-                (r) => r.categories.id === category.id,
-              )
-              const catRecurringCents = sumCents(catRules)
-
-              return (
-                <section key={category.id}>
-                  {catCents > 0 ? (
-                    <BudgetBar
-                      label={`${category.icon ?? ''} ${category.name}`.trim()}
-                      spentCents={catSpend}
-                      budgetCents={catCents}
-                      floorCents={catRecurringCents}
-                    />
-                  ) : (
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="text-sm font-medium">
-                        {category.icon} {category.name}
-                      </span>
-                      <span className="tabular-nums text-xs text-neutral-500">
-                        {formatEur(catSpend)} spent · no budget
-                      </span>
-                    </div>
-                  )}
-
-                  {/* The floor, broken down where you set the budget — so
-                      "why is the minimum 89,64?" is answered in place rather
-                      than by scrolling up to the Recurring list and adding
-                      three rules together yourself.
-
-                      <details> keeps this free of client JS and keyboard
-                      operable, same as the Reports bars. */}
-                  {catRules.length > 0 && (
-                    <details className="group mt-1">
-                      <summary className="cursor-pointer list-none text-xs text-neutral-500 hover:opacity-80">
-                        ↻ {formatEur(catRecurringCents)} recurring
-                        {catRules.length > 1 && ` · ${catRules.length} rules`}
-                        {catCents === 0 && ' — any budget should be at least that'}
-                        <span className="group-open:hidden"> · show</span>
-                        <span className="hidden group-open:inline"> · hide</span>
-                      </summary>
-
-                      <ul className="mt-1 space-y-1 border-l border-neutral-200 pl-3 dark:border-neutral-800">
-                        {catRules.map((rule) => (
-                          <li
-                            key={rule.id}
-                            className="flex items-baseline justify-between gap-3"
-                          >
-                            <span className="min-w-0 truncate text-xs text-neutral-500">
-                              {rule.note ?? rule.categories.name}
-                              <span className="ml-1.5 text-neutral-400">
-                                day {rule.day_of_month}
-                              </span>
-                            </span>
-                            <span className="shrink-0 tabular-nums text-xs">
-                              {formatEur(toCents(rule.amount))}
-                            </span>
-                          </li>
-                        ))}
-                        {/* Only worth restating when there is more than one to
-                            add up. */}
-                        {catRules.length > 1 && (
-                          <li className="flex items-baseline justify-between gap-3 border-t border-neutral-200 pt-1 dark:border-neutral-800">
-                            <span className="text-xs font-medium">Total</span>
-                            <span className="shrink-0 tabular-nums text-xs font-medium">
-                              {formatEur(catRecurringCents)}
-                            </span>
-                          </li>
-                        )}
-                      </ul>
-                    </details>
-                  )}
-
-                  {/* ConfirmDelete renders its own <form>, so it must be a
-                      SIBLING of this one. Nested forms are invalid HTML: the
-                      parser closes the outer form at the inner one, orphaning
-                      this Save button so it silently stops submitting. */}
-                  <div className="mt-2 flex items-center gap-2">
-                    <form action={setBudget} className="flex min-w-0 flex-1 gap-2">
-                      <input type="hidden" name="wallet_id" value={selected?.id ?? ''} />
-                <input type="hidden" name="period_month" value={month} />
-                      <input type="hidden" name="category_id" value={category.id} />
-                      <input
-                        name="amount"
-                        inputMode="decimal"
-                        type="text"
-                        // The recurring floor is the smallest budget that can
-                        // actually be met, so it is the obvious starting point.
-                        placeholder={
-                          catRecurringCents > 0
-                            ? `At least ${formatEur(catRecurringCents)}`
-                            : 'Set a monthly budget…'
-                        }
-                        defaultValue={
-                          catBudget ? Number(catBudget.amount).toFixed(2) : ''
-                        }
-                        className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
-                      />
-                      <button
-                        type="submit"
-                        className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700"
-                      >
-                        Save
-                      </button>
-                    </form>
-                    {catBudget && (
-                      <ConfirmDelete
-                        action={deleteBudget}
-                        id={catBudget.id}
-                        title={`${category.name} budget`}
-                        detail={`${selected?.name} · removes the budget, not the spending`}
-                        amount={formatEur(catCents)}
-                      />
-                    )}
-                  </div>
-
-                  {/* Which Home box this category lands in. Purely a display
-                      split — savings still counts as spending. */}
-                  <form action={toggleCategorySavings} className="mt-1">
-                    <input type="hidden" name="id" value={category.id} />
-                    <input
-                      type="hidden"
-                      name="is_savings"
-                      value={String(category.is_savings)}
-                    />
-                    <button
-                      type="submit"
-                      className={`text-xs ${
-                        category.is_savings
-                          ? 'text-neutral-900 dark:text-white'
-                          : 'text-neutral-400'
-                      }`}
-                    >
-                      {category.is_savings ? '☑' : '☐'} counts as savings
-                    </button>
-                  </form>
-                </section>
-              )
-            })}
+          <div className="mt-4 space-y-8">
+            {planGroups.map((group) => (
+              <div key={group.key}>
+                <p className={`text-xs font-medium ${group.tone}`}>
+                  {group.title} · {group.rows.length}
+                  {group.spentCents > 0 && ` · ${formatEur(group.spentCents)} spent`}
+                </p>
+                <p className="mt-0.5 text-xs text-neutral-500">{group.blurb}</p>
+                <div className="mt-3 space-y-5">
+                  {group.rows.map((row) => planRow(row))}
+                </div>
+              </div>
+            ))}
           </div>
 
         </>
@@ -538,8 +627,9 @@ export default async function PlanPage({
       <p className="mt-10 text-xs text-neutral-500">
         Recurring and budgets are independent — a category can have both, and a
         recurring amount counts towards its category&apos;s budget like any other
-        spending. Clear a budget with the × beside it; deleting a budget never
-        touches the expenses it was measuring.
+        spending. Clear a budget with the × beside it — that puts the category
+        back to an assumed {formatEur(0)}, and never touches the expenses it was
+        measuring.
       </p>
     </>
   )

@@ -287,8 +287,45 @@ again:
 | **Budget** | no | A budget is a decision about *one month*. Copying last month's silently asserts you made that decision again. |
 
 Pre-filled numbers nobody chose are worse than no numbers: they look
-deliberate, so they never get revisited. An empty budget list means "not
-decided yet" — never "zero".
+deliberate, so they never get revisited. Nothing is copied forward, so every
+budget on the page is one somebody typed this month.
+
+### Not in plan
+
+**Plan lists every category, and an unbudgeted one is measured against the
+plan it does have.** Hiding those rows hid the spending in them, and the
+categories worth looking at hardest are the ones nobody has decided about yet.
+Plan files all of them into three groups, which are just the Recurring/Budget
+split used as a filing system:
+
+| Group | Means | Measured against |
+|---|---|---|
+| **In plan** | a budget was set this month | the budget |
+| **Recurring only** | no budget, but rules commit money here | the recurring floor — that money *is* planned, just not with a budget |
+| **Not in plan** | neither | 0,00 €, so every euro spent is unplanned |
+
+**A recurring category is never "not in plan", however unbudgeted.** Rent goes
+out every month by design. Counting it as unplanned would make the biggest line
+in the household its biggest surprise, and the number worthless.
+
+**Going past an implied budget is AMBER, not red.** Red is for missing a target
+you set; nothing was promised here. A page of red bars for every category the
+household has never budgeted only teaches you to stop reading the colour.
+
+Stored state is unchanged: no budget row is written until you save one, and
+clearing a budget returns the category to Not in plan. This is a *display*
+rule — `budgetState()` still reads `budgetCents <= 0` as "nothing to measure",
+so Reports and Home's own bars are untouched; `BudgetBar` takes
+`budgetSet={false}` to opt in.
+
+**Home shows the total.** A "Not in plan" card sits under Expected expense with
+the joint categories that have spending, no budget and no rule, biggest first.
+Expected only ever adds up what was decided, so without its counterpart the
+categories nobody thought about were the ones the dashboard never mentioned.
+Joint wallets only — a personal wallet takes one wallet-scope budget by design,
+so every one of its categories would otherwise land here — and the per-category
+detail comes from `expenses`, which RLS already limits to rows this user may
+read.
 
 ### Cycle dates are adjustable, within two rules
 

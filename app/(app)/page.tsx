@@ -91,6 +91,56 @@ export default async function HomePage() {
   )
   const expectedCents = recurringCents + budgetedCents - overlapCents
 
+  /**
+   * NOT IN PLAN — spending in a category with neither a budget nor an active
+   * recurring rule. Those are the two ways money is committed (PROJECT.md), so
+   * a category with neither was never accounted for at all, and its budget
+   * reads as 0,00 €: every euro in it is unplanned.
+   *
+   * A recurring category is NOT unplanned, however unbudgeted — rent goes out
+   * every month by design. Counting it here would have made the biggest line
+   * in the household the biggest surprise, and the number useless.
+   *
+   * JOINT wallets only. A personal wallet takes one wallet-scope budget by
+   * design, so every one of its categories has no category budget and all of
+   * them would land here. And per-category detail comes from `expenses`, which
+   * RLS already limits to rows this user may read — the other person's
+   * personal spending is not in it and must not be.
+   */
+  const unplanned = wallets
+    .filter((w) => w.kind === 'joint')
+    .flatMap((wallet) =>
+      categories
+        .filter(
+          (category) =>
+            !budgets.some(
+              (b) => b.wallet_id === wallet.id && b.category_id === category.id,
+            ) &&
+            !rules.some(
+              (r) =>
+                r.active &&
+                r.wallet_id === wallet.id &&
+                r.categories.id === category.id,
+            ),
+        )
+        .map((category) => ({
+          key: `${wallet.id}:${category.id}`,
+          category,
+          wallet,
+          cents: sumCents(
+            expenses.filter(
+              (e) => e.wallets.id === wallet.id && e.categories.id === category.id,
+            ),
+          ),
+        })),
+    )
+    // Nothing spent is not a gap — an unbudgeted category you never touched is
+    // simply one you did not need. Plan lists those; Home is about this cycle.
+    .filter((row) => row.cents > 0)
+    .sort((a, b) => b.cents - a.cents)
+
+  const unplannedCents = unplanned.reduce((total, row) => total + row.cents, 0)
+
   const shortDate = (value: string) =>
     new Date(`${value}T00:00:00Z`).toLocaleDateString('en-GB', {
       day: 'numeric',
@@ -215,6 +265,56 @@ export default async function HomePage() {
               </>
             )}
             set it on Plan →
+          </p>
+        </Link>
+      )}
+
+      {/* The counterpart to Expected: what happened OUTSIDE the plan. Expected
+          only ever adds up what was decided, so without this the categories
+          nobody thought about are the ones the dashboard never mentions. Amber,
+          not red — no target was missed here, because none was set. */}
+      {unplannedCents > 0 && (
+        <Link
+          href="/budgets"
+          className="mt-3 block rounded-xl border border-amber-500/40 p-4 hover:border-amber-500"
+        >
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-xs font-medium text-amber-600">Not in plan</p>
+            <span className="tabular-nums text-lg font-semibold text-amber-600">
+              {formatEur(unplannedCents)}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-neutral-500">
+            Spent in {unplanned.length}{' '}
+            {unplanned.length === 1 ? 'category' : 'categories'} with no budget
+            and nothing recurring — counted as {formatEur(0)}, so none of it was
+            accounted for.
+          </p>
+
+          <ul className="mt-2 space-y-1">
+            {unplanned.slice(0, 5).map((row) => (
+              <li
+                key={row.key}
+                className="flex items-baseline justify-between gap-3"
+              >
+                <span className="min-w-0 truncate text-sm">
+                  {row.category.icon} {row.category.name}
+                </span>
+                <span className="shrink-0 tabular-nums text-sm">
+                  {formatEur(row.cents)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {unplanned.length > 5 && (
+            <p className="mt-1 text-xs text-neutral-500">
+              and {unplanned.length - 5} more
+            </p>
+          )}
+
+          <p className="mt-2 text-xs text-neutral-500">
+            Budget one on Plan, or leave it — this is a number to know, not
+            necessarily one to fix →
           </p>
         </Link>
       )}
