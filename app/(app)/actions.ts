@@ -533,8 +533,21 @@ export async function toggleCategorySavings(formData: FormData): Promise<void> {
   revalidatePath('/reports')
 }
 
+/**
+ * Sign out THIS device only.
+ *
+ * `scope: 'local'` is load-bearing and must not be dropped. supabase-js
+ * defaults to `'global'`, which revokes every refresh token the user holds —
+ * so signing out on the laptop silently killed the session on the phone, and
+ * on any other browser that had ever signed in. For a two-person household
+ * app used from a phone and a laptop at once, that is never what "sign out"
+ * means: it means this browser, on this device.
+ *
+ * Concurrent sessions are otherwise fine — Supabase issues an independent
+ * refresh token per sign-in and rotates them separately.
+ */
 export async function signOut(): Promise<void> {
   const supabase = await createClient()
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: 'local' })
   redirect('/login')
 }
