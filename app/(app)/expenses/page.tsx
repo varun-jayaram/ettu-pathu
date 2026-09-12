@@ -120,118 +120,146 @@ export default async function ExpensesPage({
         </p>
       ) : (
         <div className="mt-6 space-y-6">
-          {Object.entries(byDate).map(([date, rows]) => (
-            <section key={date}>
-              <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                {new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', {
-                  weekday: 'short',
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-              </h2>
-              <ul className="mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">
-                {rows.map((expense) => (
-                  <li key={expense.id} className="flex items-center gap-3 py-3">
-                    <span aria-hidden className="text-lg">
-                      {expense.categories.icon ?? '•'}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {expense.categories.name}
-                        {expense.recurring_rule_id && (
-                          <span
-                            title="Generated from a recurring rule"
-                            className="ml-1.5 text-xs text-neutral-500"
+          {Object.entries(byDate).map(([date, rows]) => {
+            const dayCents = sumCents(rows)
+            const dayRecurringCents = sumCents(
+              rows.filter((e) => e.recurring_rule_id),
+            )
+
+            return (
+              <section key={date}>
+                <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                  {new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                </h2>
+                <ul className="mt-2 divide-y divide-neutral-200 dark:divide-neutral-800">
+                  {rows.map((expense) => (
+                    <li key={expense.id} className="flex items-center gap-3 py-3">
+                      <span aria-hidden className="text-lg">
+                        {expense.categories.icon ?? '•'}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {expense.categories.name}
+                          {expense.recurring_rule_id && (
+                            <span
+                              title="Generated from a recurring rule"
+                              className="ml-1.5 text-xs text-neutral-500"
+                            >
+                              ↻
+                            </span>
+                          )}
+                        </p>
+                        <p className="truncate text-xs text-neutral-500">
+                          {expense.wallets.name}
+                          {expense.note ? ` · ${expense.note}` : ''}
+                        </p>
+                      </div>
+                      <span className="tabular-nums text-sm font-medium">
+                        {formatEur(toCents(expense.amount))}
+                      </span>
+                      <EditDialog
+                        action={updateExpense}
+                        id={expense.id}
+                        title="Edit expense"
+                      >
+                        <Field label="Amount">
+                          <input
+                            name="amount"
+                            inputMode="decimal"
+                            type="text"
+                            required
+                            defaultValue={Number(expense.amount).toFixed(2)}
+                            className={fieldClass}
+                          />
+                        </Field>
+                        <Field label="Category">
+                          <select
+                            name="category_id"
+                            required
+                            defaultValue={expense.categories.id}
+                            className={fieldClass}
                           >
-                            ↻
-                          </span>
-                        )}
-                      </p>
-                      <p className="truncate text-xs text-neutral-500">
-                        {expense.wallets.name}
-                        {expense.note ? ` · ${expense.note}` : ''}
-                      </p>
-                    </div>
-                    <span className="tabular-nums text-sm font-medium">
-                      {formatEur(toCents(expense.amount))}
-                    </span>
-                    <EditDialog
-                      action={updateExpense}
-                      id={expense.id}
-                      title="Edit expense"
-                    >
-                      <Field label="Amount">
-                        <input
-                          name="amount"
-                          inputMode="decimal"
-                          type="text"
-                          required
-                          defaultValue={Number(expense.amount).toFixed(2)}
-                          className={fieldClass}
-                        />
-                      </Field>
-                      <Field label="Category">
-                        <select
-                          name="category_id"
-                          required
-                          defaultValue={expense.categories.id}
-                          className={fieldClass}
-                        >
-                          {categories.map((category) => (
-                            <option key={category.id} value={category.id}>
-                              {category.icon ? `${category.icon} ` : ''}
-                              {category.name}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Wallet">
-                        <select
-                          name="wallet_id"
-                          required
-                          defaultValue={expense.wallets.id}
-                          className={fieldClass}
-                        >
-                          {wallets.map((wallet) => (
-                            <option key={wallet.id} value={wallet.id}>
-                              {wallet.name}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Date">
-                        <input
-                          name="spent_on"
-                          type="date"
-                          required
-                          defaultValue={expense.spent_on}
-                          className={fieldClass}
-                        />
-                      </Field>
-                      <Field label="Note">
-                        <input
-                          name="note"
-                          type="text"
-                          defaultValue={expense.note ?? ''}
-                          className={fieldClass}
-                        />
-                      </Field>
-                    </EditDialog>
-                    <ConfirmDelete
-                      action={deleteExpense}
-                      id={expense.id}
-                      title={expense.categories.name}
-                      detail={`${expense.wallets.name}${
-                        expense.note ? ` · ${expense.note}` : ''
-                      }`}
-                      amount={formatEur(toCents(expense.amount))}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+                            {categories.map((category) => (
+                              <option key={category.id} value={category.id}>
+                                {category.icon ? `${category.icon} ` : ''}
+                                {category.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Wallet">
+                          <select
+                            name="wallet_id"
+                            required
+                            defaultValue={expense.wallets.id}
+                            className={fieldClass}
+                          >
+                            {wallets.map((wallet) => (
+                              <option key={wallet.id} value={wallet.id}>
+                                {wallet.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Date">
+                          <input
+                            name="spent_on"
+                            type="date"
+                            required
+                            defaultValue={expense.spent_on}
+                            className={fieldClass}
+                          />
+                        </Field>
+                        <Field label="Note">
+                          <input
+                            name="note"
+                            type="text"
+                            defaultValue={expense.note ?? ''}
+                            className={fieldClass}
+                          />
+                        </Field>
+                      </EditDialog>
+                      <ConfirmDelete
+                        action={deleteExpense}
+                        id={expense.id}
+                        title={expense.categories.name}
+                        detail={`${expense.wallets.name}${
+                          expense.note ? ` · ${expense.note}` : ''
+                        }`}
+                        amount={formatEur(toCents(expense.amount))}
+                      />
+                    </li>
+                  ))}
+                </ul>
+
+                {/* The day's total, UNDER its rows rather than beside the date:
+                    a sum belongs at the foot of the column it sums, and reading
+                    it there is what makes "what did today cost?" answerable
+                    without adding the lines up yourself.
+
+                    Recurring is split out for the same reason the page header
+                    splits it — the 1st of the month is not a day you overspent,
+                    it is the day the rent left, and one big number with no
+                    explanation reads as the former. */}
+                <div className="mt-1 flex items-baseline justify-end gap-3 border-t border-neutral-200 pt-2 dark:border-neutral-800">
+                  <span className="text-xs text-neutral-500">
+                    {rows.length} {rows.length === 1 ? 'expense' : 'expenses'}
+                    {dayRecurringCents > 0 && (
+                      <> · ↻ {formatEur(dayRecurringCents)} recurring</>
+                    )}
+                  </span>
+                  <span className="tabular-nums text-sm font-medium">
+                    {formatEur(dayCents)}
+                  </span>
+                </div>
+              </section>
+            )
+          })}
         </div>
       )}
     </>
