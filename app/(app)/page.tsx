@@ -141,6 +141,78 @@ export default async function HomePage() {
 
   const unplannedCents = unplanned.reduce((total, row) => total + row.cents, 0)
 
+  /**
+   * OVER RECURRING — a fixed cost that was not fixed this cycle.
+   *
+   * A recurring-only category is missing from both halves of Home: it draws no
+   * budget bar, because there is no budget, and it is deliberately kept out of
+   * NOT IN PLAN above, because a rule IS a plan. So the one thing it can do
+   * wrong — cost more than its rules commit — was the one thing the dashboard
+   * never mentioned. The Internet bill going up, a second charge landing in a
+   * category meant to take one, a top-up on a fixed ticket: all invisible.
+   *
+   * The rules are the target. Spend is measured against the summed recurring
+   * amount, which is the same implied budget Plan already draws these
+   * categories against, so the two tabs cannot disagree about what "over"
+   * means.
+   *
+   * BUDGETED categories are excluded — they get a real bar below with the
+   * floor marked inside it, and would otherwise be reported twice.
+   *
+   * SAVINGS is excluded. Paying more into savings than the rule commits is not
+   * a cost overrun, and Home already gives savings its own box instead of
+   * treating it as spending gone wrong.
+   *
+   * EVERY wallet, not joint only. "Not in plan" is joint-only because a
+   * personal wallet budgets as one number, so every one of its categories
+   * would land there. A recurring rule is per category whatever the wallet, so
+   * there is no such flood here. RLS still limits `rules` and `expenses` to
+   * what this user may read, so the other person's personal rules never
+   * appear — the same reason the detail below "By wallet" is safe.
+   */
+  const overRecurring = wallets
+    .flatMap((wallet) =>
+      categories
+        .filter(
+          (category) =>
+            !category.is_savings &&
+            !budgets.some(
+              (b) => b.wallet_id === wallet.id && b.category_id === category.id,
+            ),
+        )
+        .map((category) => {
+          const floorCents = sumCents(
+            rules.filter(
+              (r) =>
+                r.active &&
+                r.wallet_id === wallet.id &&
+                r.categories.id === category.id,
+            ),
+          )
+          const spentCents = sumCents(
+            expenses.filter(
+              (e) => e.wallets.id === wallet.id && e.categories.id === category.id,
+            ),
+          )
+          return {
+            key: `${wallet.id}:${category.id}`,
+            label: `${category.icon ?? ''} ${category.name} · ${wallet.name}`.trim(),
+            floorCents,
+            spentCents,
+            overCents: spentCents - floorCents,
+          }
+        })
+        // No rules at all is the "Not in plan" case, already handled. Still
+        // inside its rules is a category working exactly as intended.
+        .filter((row) => row.floorCents > 0 && row.overCents > 0),
+    )
+    .sort((a, b) => b.overCents - a.overCents)
+
+  const overRecurringCents = overRecurring.reduce(
+    (total, row) => total + row.overCents,
+    0,
+  )
+
   const shortDate = (value: string) =>
     new Date(`${value}T00:00:00Z`).toLocaleDateString('en-GB', {
       day: 'numeric',
@@ -315,6 +387,60 @@ export default async function HomePage() {
           <p className="mt-2 text-xs text-neutral-500">
             Budget one on Plan, or leave it — this is a number to know, not
             necessarily one to fix →
+          </p>
+        </Link>
+      )}
+
+      {/* Recurring's own failure mode, and the counterpart to both boxes above:
+          Expected adds up what the rules promise, Not in plan catches what had
+          no plan at all, and this catches a plan that was overrun.
+
+          Amber rather than red, for the same reason BudgetBar is: the amount a
+          rule commits is an IMPLIED target, not one somebody typed. Red stays
+          reserved for a budget that was set and missed. */}
+      {overRecurringCents > 0 && (
+        <Link
+          href="/budgets"
+          className="mt-3 block rounded-xl border border-amber-500/40 p-4 hover:border-amber-500"
+        >
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-xs font-medium text-amber-600">Over recurring</p>
+            <span className="tabular-nums text-lg font-semibold text-amber-600">
+              +{formatEur(overRecurringCents)}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-neutral-500">
+            {overRecurring.length}{' '}
+            {overRecurring.length === 1 ? 'category has' : 'categories have'}{' '}
+            cost more than the rules commit — a fixed cost that was not fixed
+            this cycle.
+          </p>
+
+          {/* The same bar Plan draws for a recurring-only category, so "over"
+              looks identical on both tabs. A flat list of overage amounts would
+              lose the proportion: 10,00 € past a 15,00 € subscription is not
+              the same event as 10,00 € past 1.200,00 € of rent. */}
+          <div className="mt-3 space-y-4">
+            {overRecurring.slice(0, 5).map((row) => (
+              <BudgetBar
+                key={row.key}
+                label={row.label}
+                spentCents={row.spentCents}
+                budgetCents={0}
+                floorCents={row.floorCents}
+                budgetSet={false}
+              />
+            ))}
+          </div>
+          {overRecurring.length > 5 && (
+            <p className="mt-2 text-xs text-neutral-500">
+              and {overRecurring.length - 5} more
+            </p>
+          )}
+
+          <p className="mt-2 text-xs text-neutral-500">
+            Budget it on Plan to allow for the extra, or update the rule if the
+            new amount is the real one now →
           </p>
         </Link>
       )}
