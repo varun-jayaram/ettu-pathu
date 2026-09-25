@@ -130,30 +130,31 @@ function labelMonthFor(y: number, m: number): ISODate {
   return iso(ny, nm, 1)
 }
 
-export function getPeriod(today: ISODate, options: PeriodOptions = {}): Period {
+type Boundary = {
+  date: ISODate
+  snapped: boolean
+  overridden: boolean
+  /** First of the month the cycle STARTING here is named for. */
+  month: ISODate
+}
+
+/**
+ * Every cycle start near `y`/`m`, with hand-set starts and real paydays already
+ * applied, sorted by date.
+ *
+ * Boundaries are built snapped-first on purpose. An earlier version chose the
+ * cycle from the unsnapped anchor and snapped afterwards, which could move a
+ * boundary out from under the day being asked about and return a period that
+ * did not contain it. A salary arriving on the 24th with an anchor of the 26th
+ * produced "26 Jul – 23 Aug" on the 25th of August.
+ */
+function cycleBoundaries(y: number, m: number, options: PeriodOptions): Boundary[] {
   const anchorDay = options.anchorDay ?? 26
   const salaryDates = options.salaryDates ?? []
   const windowDays = options.windowDays ?? 7
   const starts = options.starts ?? {}
 
-  const [y, m] = parseIso(today)
-
-  /**
-   * Build every nearby boundary WITH snapping already applied, then pick the
-   * cycle containing `today`.
-   *
-   * Order matters: an earlier version chose the cycle from the unsnapped
-   * anchor first and snapped afterwards, which could move a boundary out from
-   * under `today` and return a period that did not contain it. A salary
-   * arriving on the 24th with an anchor of the 26th produced
-   * "26 Jul – 23 Aug" on the 25th of August.
-   */
-  const boundaries: {
-    date: ISODate
-    snapped: boolean
-    overridden: boolean
-    month: ISODate
-  }[] = []
+  const boundaries: Boundary[] = []
 
   for (let offset = -2; offset <= 2; offset++) {
     const [by, bm] = shiftMonth(y, m, offset)
@@ -180,21 +181,40 @@ export function getPeriod(today: ISODate, options: PeriodOptions = {}): Period {
   boundaries.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
 
   // Two months' anchors can snap onto the same payday; keep one.
-  const unique = boundaries.filter(
+  return boundaries.filter(
     (boundary, index) => index === 0 || boundary.date !== boundaries[index - 1].date,
   )
+}
+
+/** The window a known start belongs to, closed the day before the next start. */
+function windowFrom(
+  boundaries: Boundary[],
+  current: Boundary,
+): { from: ISODate; to: ISODate; snapped: boolean } {
+  const from = current.date
+  // The next STRICTLY LATER start, not simply the next index: if a hand-set
+  // start ever collides with a neighbour's, taking index + 1 would close the
+  // window before it opened.
+  const next = boundaries.find((boundary) => boundary.date > from)
+  return {
+    from,
+    to: addDays(next?.date ?? addDays(from, 30), -1),
+    // A payday that moved either end of this cycle counts as snapped.
+    snapped: current.snapped || Boolean(next?.snapped),
+  }
+}
+
+export function getPeriod(today: ISODate, options: PeriodOptions = {}): Period {
+  const [y, m] = parseIso(today)
+  const boundaries = cycleBoundaries(y, m, options)
 
   let startIndex = 0
-  for (let i = 0; i < unique.length; i++) {
-    if (unique[i].date <= today) startIndex = i
+  for (let i = 0; i < boundaries.length; i++) {
+    if (boundaries[i].date <= today) startIndex = i
   }
 
-  const current = unique[startIndex]
-  const from = current.date
-  const nextFrom = unique[startIndex + 1]?.date ?? addDays(from, 30)
-  const snapped = current.snapped || Boolean(unique[startIndex + 1]?.snapped)
-
-  const to = addDays(nextFrom, -1)
+  const current = boundaries[startIndex]
+  const { from, to, snapped } = windowFrom(boundaries, current)
 
   return describe(from, to, current.month, today, snapped, current.overridden)
 }
@@ -237,12 +257,15 @@ function describe(
 
 /**
  * The period for a specific month, whether or not it contains today. This is
- * what the month picker on Plan navigates with: "show me September" must work
+ * what the app-wide month picker navigates with: "show me September" must work
  * in August.
  *
- * Derived by asking getPeriod about a day the cycle is guaranteed to contain —
- * the label month's anchor day, which always falls inside the cycle named for
- * it, since that cycle runs from late in the previous month to late in this one.
+ * Resolved by finding the boundary KEYED to that month. It used to probe
+ * getPeriod with the day before the month's anchor, on the assumption that the
+ * cycle named for a month ends there — which stops being true the moment the
+ * NEXT cycle starts before its own anchor. A salary logged on 25 Sep pulled
+ * October's start onto the probe day, so September was handed October's window
+ * wearing September's label: "25 Sep – 25 Oct".
  */
 export function getPeriodForMonth(
   month: ISODate,
@@ -250,18 +273,30 @@ export function getPeriodForMonth(
   options: PeriodOptions = {},
 ): Period {
   const [my, mm] = parseIso(month)
-  const anchorDay = options.anchorDay ?? 26
-  // One day before the next cycle would start: firmly inside this one.
-  const probe = addDays(anchorIn(my, mm, anchorDay), -1)
-  const period = getPeriod(probe, options)
-  return describe(
-    period.from,
-    period.to,
-    month,
-    today,
-    period.snapped,
-    period.overridden,
-  )
+  // A cycle is named for the month it ENDS in, so its start lives in the month
+  // before: centre the boundary window there.
+  const [py, pm] = shiftMonth(my, mm, -1)
+  const boundaries = cycleBoundaries(py, pm, options)
+
+  const current = boundaries.find((boundary) => boundary.month === month)
+  if (!current) {
+    // Only reachable when two boundaries landed on the same date and the dedupe
+    // dropped this month's. Fall back to the containing cycle rather than throw:
+    // an empty month must still be navigable.
+    const probe = addDays(anchorIn(my, mm, options.anchorDay ?? 26), -1)
+    const period = getPeriod(probe, options)
+    return describe(
+      period.from,
+      period.to,
+      month,
+      today,
+      period.snapped,
+      period.overridden,
+    )
+  }
+
+  const { from, to, snapped } = windowFrom(boundaries, current)
+  return describe(from, to, month, today, snapped, current.overridden)
 }
 
 /** Month keys either side of `month`, for the picker. */

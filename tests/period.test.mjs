@@ -123,6 +123,72 @@ eq('a past month is still reachable',
 eq('a future cycle has elapsed 0 days',
   getPeriodForMonth('2026-10-01', '2026-08-23', { anchorDay: 26 }).daysElapsed, 0)
 
+// --- a month keyed to its own boundary, not to a probe date ----------------
+// September's salary landed on the 25th, a day before the anchor. That pulls
+// OCTOBER's start onto 25 Sep — and the old probe ("the day before September's
+// anchor") then sat inside October, so September was handed 25 Sep – 25 Oct.
+const earlyPayday = { anchorDay: 26, salaryDates: ['2026-09-25'] }
+
+eq('an early payday shortens September rather than moving it',
+  range(getPeriodForMonth('2026-09-01', '2026-09-25', earlyPayday)),
+  ['2026-08-26', '2026-09-24', 'September 2026'])
+eq('…and the cycle it started is October',
+  range(getPeriodForMonth('2026-10-01', '2026-09-25', earlyPayday)),
+  ['2026-09-25', '2026-10-25', 'October 2026'])
+eq('September says a real payday moved it',
+  getPeriodForMonth('2026-09-01', '2026-09-25', earlyPayday).snapped, true)
+eq('the live cycle on 25 Sep is October',
+  range(getPeriod('2026-09-25', earlyPayday)),
+  ['2026-09-25', '2026-10-25', 'October 2026'])
+
+// The same shape, reached by hand instead of by a payday.
+eq('an early hand-set October start shortens September too',
+  range(getPeriodForMonth('2026-09-01', '2026-09-25', {
+    anchorDay: 26,
+    starts: { '2026-10-01': '2026-09-25' },
+  })),
+  ['2026-08-26', '2026-09-24', 'September 2026'])
+eq('…and September is not itself flagged as overridden',
+  getPeriodForMonth('2026-09-01', '2026-09-25', {
+    anchorDay: 26,
+    starts: { '2026-10-01': '2026-09-25' },
+  }).overridden, false)
+
+// A LATE payday always worked, and must keep working.
+eq('a late payday stretches September to the 27th',
+  range(getPeriodForMonth('2026-09-01', '2026-09-30', {
+    anchorDay: 26,
+    salaryDates: ['2026-09-28'],
+  })),
+  ['2026-08-26', '2026-09-27', 'September 2026'])
+
+// The invariant the bug broke: the window a month resolves to is the window
+// getPeriod itself attributes to that month — never a neighbour's, relabelled.
+for (const payday of ['2026-09-19', '2026-09-22', '2026-09-24', '2026-09-25',
+                      '2026-09-26', '2026-09-28', '2026-10-02']) {
+  const options = { anchorDay: 26, salaryDates: [payday] }
+  for (const month of ['2026-08-01', '2026-09-01', '2026-10-01', '2026-11-01']) {
+    const period = getPeriodForMonth(month, '2026-09-25', options)
+    eq(`payday ${payday}: ${month} resolves to its own cycle`,
+      [period.from < period.to,
+       getPeriod(period.from, options).month,
+       getPeriod(period.to, options).month],
+      [true, month, month])
+  }
+}
+
+// A payday BEFORE the anchor keeps every cycle inside the month it is named
+// for. (A genuinely late salary can still push a boundary a day or two past the
+// month end — snapping follows reality, and that is not this bug.)
+for (const payday of ['2026-09-19', '2026-09-22', '2026-09-24', '2026-09-25']) {
+  const options = { anchorDay: 26, salaryDates: [payday] }
+  for (const month of ['2026-09-01', '2026-10-01']) {
+    eq(`payday ${payday}: ${month} ends inside its own month`,
+      getPeriodForMonth(month, '2026-09-25', options).to.slice(0, 7),
+      month.slice(0, 7))
+  }
+}
+
 // --- hand-set starts override both the anchor and a logged payday ---------
 const starts = { '2026-09-01': '2026-08-24' }
 

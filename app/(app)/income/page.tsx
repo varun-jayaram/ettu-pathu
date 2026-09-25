@@ -3,7 +3,6 @@ import { getActivePeriod, getIncome, getSettings } from '@/lib/queries'
 import { formatEur, sumCents } from '@/lib/money'
 import {
   MAX_CYCLE_DAYS,
-  addDays,
   earliestStartFor,
   monthLabel,
   shiftMonthKey,
@@ -43,10 +42,6 @@ export default async function IncomePage({
   // Never after the first of its own month, or the cycle would end after the
   // month is over. This is the CHECK constraint in 0015 restated.
   const latestStart = period.month
-  // The hard ceiling on the end: 30 Sep for September, and so on. Structural
-  // rather than checked — the next cycle must start by the first of its own
-  // month, so this one ends the day before at the latest.
-  const lastDayOfMonth = addDays(nextMonth, -1)
 
   return (
     <>
@@ -204,13 +199,19 @@ export default async function IncomePage({
           )}
         </form>
 
+        {/* The END is not a rule to state, it is a consequence: it is the day
+            before the next cycle starts, and a logged payday moves that. Saying
+            "always ends by the last of the month" read as a contradiction
+            directly under a cycle ending on the 24th. */}
         <p className="mt-2 text-xs text-neutral-500">
-          Always ends by {formatDate(lastDayOfMonth)} — the day before{' '}
-          {monthLabel(nextMonth)} starts, so a cycle never runs past the month
-          it is named for. It may begin at most {MAX_CYCLE_DAYS} days before it
-          ends, so anywhere from {formatDate(earliestStart)} to{' '}
-          {formatDate(latestStart)}. Change month in the header to set a
-          different one.
+          Ends {formatDate(period.to)} — the day before the{' '}
+          {monthLabel(nextMonth)} cycle begins. Logging {monthLabel(nextMonth)}
+          &rsquo;s salary moves both: that cycle starts on the payday, and this
+          one ends the day before. Only the start is settable here, anywhere
+          from {formatDate(earliestStart)} to {formatDate(latestStart)} — at
+          most {MAX_CYCLE_DAYS} days before it ends, and no later than the first
+          of the month, which is what keeps a cycle inside the month it is named
+          for. Change month in the header to set a different one.
         </p>
       </section>
     </>
