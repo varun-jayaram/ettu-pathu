@@ -65,7 +65,10 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
   rule (which stamps it onto the rows it generates). Net worth shows
   "1.300,00 € tagged, not yet applied · Apply → …", and the balance moves only
   on that press — writing into the same field you can type, which still wins.
-  `expenses.balance_applied_at` is what stops a second press double-counting;
+  **Don't apply** sits beside it and settles the payments without touching the
+  figure, for when you already typed it yourself.
+  `expenses.balance_applied_at` records *settled* either way, and is what stops
+  a second press double-counting;
   pending ignores the pay cycle, and so does the whole tab. No automatic
   reversal if a payment is edited after applying. An untagged payment is never
   warned about. Shared like income: rows sit in the joint wallet.
@@ -86,7 +89,7 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
 | `app/login/` | The only unauthenticated route. There is no signup route, by design |
 | `lib/supabase/` | `client.ts` (browser), `server.ts` (RSC + actions), `proxy.ts` (session refresh) |
 | `proxy.ts` | Session refresh + route protection. **Next 16 renamed Middleware → Proxy** |
-| `supabase/migrations/` | `0001_init` · `0002_rls` · `0003_seed` · `0004_recurring` · `0007` income+cycles · `0011` drops group `kind` · `0014` drops groups entirely · `0015` monthly budgets + adjustable cycle dates · `0017` no budget carry-forward · `0018` net worth · `0019` the expense names its loan · `0020` the balance is typed · `0021` tagged payments wait for Apply |
+| `supabase/migrations/` | `0001_init` · `0002_rls` · `0003_seed` · `0004_recurring` · `0007` income+cycles · `0011` drops group `kind` · `0014` drops groups entirely · `0015` monthly budgets + adjustable cycle dates · `0017` no budget carry-forward · `0018` net worth · `0019` the expense names its loan · `0020` the balance is typed · `0021` tagged payments wait for Apply · `0022` and can be dismissed |
 
 ## Conventions
 

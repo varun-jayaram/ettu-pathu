@@ -1,6 +1,7 @@
 import {
   applyNetWorthPayments,
   deleteNetWorthItem,
+  dismissNetWorthPayments,
   setNetWorthBalance,
   toggleNetWorthItem,
   updateNetWorthItem,
@@ -278,7 +279,8 @@ function Section({
       {sectionPending > 0 && (
         <p className="mt-1 text-xs text-neutral-500">
           {formatEur(sectionPending)} tagged below and not yet applied, so it is
-          not in that figure yet.
+          not in that figure yet — apply it, or say don&rsquo;t apply if the
+          figure already covers it.
         </p>
       )}
 
@@ -384,6 +386,20 @@ function Section({
                       className="rounded-lg border border-neutral-300 px-2.5 py-1 text-xs font-medium dark:border-neutral-700"
                     >
                       Apply → {formatEur(row.afterApply)}
+                    </button>
+                  </form>
+                  {/* The common case, so it is offered rather than left to be
+                      worked around: the figure above may already account for
+                      this. Quieter than Apply — it is the "nothing happens"
+                      choice, and it must not compete with the one that does. */}
+                  <form action={dismissNetWorthPayments}>
+                    <input type="hidden" name="id" value={row.item.id} />
+                    <button
+                      type="submit"
+                      title="Leave the figure as it is and stop offering these payments"
+                      className="rounded-lg px-2 py-1 text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900 dark:hover:text-white"
+                    >
+                      Don&rsquo;t apply
                     </button>
                   </form>
                 </div>

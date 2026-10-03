@@ -468,10 +468,25 @@ still wins; Apply writes into that same field. What it removes is the
 subtraction, not the control. An automatic version was offered and declined, for
 exactly that reason.
 
+**"Don't apply" sits beside Apply**, quieter, and settles the payments without
+touching the balance. `0022` added it because the common case turned out to be a
+figure the user had already typed by hand: the payment was accounted for, and
+the row went on offering to subtract it a second time. The only way out was to
+apply it and then correct the figure back, which is worse than doing nothing.
+The payment keeps its amount, its tag and its place in the Log; only the offer
+goes away.
+
 **Pending is remembered per payment, not recomputed.** `expenses.balance_applied_at`
 records the fact, which is what stops a second press — or simply loading the page
 next month — subtracting the same 1.300 € again. Without it every tag would look
 pending forever.
+
+It records *settled*, not *applied*, and there is deliberately **no second
+column** for the dismissed case. The app asks that timestamp exactly one
+question — "is this still pending?" — and the two ways of settling have no
+different consequence anywhere: not in a balance, not in a total, not in the
+Log. A second timestamp would have to be read everywhere the first one is, to
+tell apart two states nothing distinguishes.
 
 **Pending ignores the pay cycle**, unlike everything else on every other tab. A
 payment tagged in September and never applied is still waiting in October;

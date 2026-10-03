@@ -744,6 +744,35 @@ export async function applyNetWorthPayments(formData: FormData): Promise<void> {
 }
 
 /**
+ * Settles the payments tagged to one entry WITHOUT touching its balance.
+ *
+ * The counterpart to Apply, and the common case: the balance was already typed
+ * by hand, so the payment is accounted for and the row should stop offering to
+ * subtract it again. Before this the only way out was to apply it and then
+ * correct the figure back, which is worse than doing nothing.
+ *
+ * The payments themselves are untouched — same amount, same tag, same place in
+ * the Log. Only the offer goes away.
+ */
+export async function dismissNetWorthPayments(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
+
+  const supabase = await createClient()
+
+  // No balance write at all, which is the whole point. RLS scopes the update to
+  // payments in a wallet this user belongs to.
+  await supabase
+    .from('expenses')
+    .update({ balance_applied_at: new Date().toISOString() })
+    .eq('net_worth_item_id', id)
+    .is('balance_applied_at', null)
+
+  revalidatePath('/net-worth')
+  revalidatePath('/')
+}
+
+/**
  * Edits one — everything at once, for the occasional correction.
  *
  * The balance alone has its own action above, because that is the field that
