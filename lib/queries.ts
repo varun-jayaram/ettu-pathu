@@ -37,6 +37,9 @@ export type ExpenseRow = {
   spent_on: string
   note: string | null
   recurring_rule_id: string | null
+  category_id: string
+  net_worth_item_id: string | null
+  balance_applied_at: string | null
   wallets: { id: string; name: string; kind: string }
   categories: {
     id: string
@@ -73,13 +76,20 @@ export async function getCategories(): Promise<Category[]> {
 }
 
 const EXPENSE_SELECT = `
-  id, amount, spent_on, note, recurring_rule_id,
+  id, amount, spent_on, note, recurring_rule_id, category_id, net_worth_item_id,
+  balance_applied_at,
   wallets!inner(id, name, kind),
   categories!inner(id, name, icon, is_savings)
 `
 
 export async function getExpenses(options: {
   walletId?: string
+  /** Narrow to a handful of categories — how Net worth finds the payments that
+   *  serviced a loan or an investment without reading the whole log. */
+  categoryIds?: string[]
+  /** Only payments tagged to a loan or investment and not yet applied to its
+   *  balance — what Net worth offers an Apply button for. */
+  netWorthTag?: 'pending'
   from?: string
   to?: string
   search?: string
@@ -95,6 +105,12 @@ export async function getExpenses(options: {
     .limit(options.limit ?? 100)
 
   if (options.walletId) query = query.eq('wallet_id', options.walletId)
+  if (options.categoryIds) query = query.in('category_id', options.categoryIds)
+  if (options.netWorthTag === 'pending') {
+    query = query
+      .not('net_worth_item_id', 'is', null)
+      .is('balance_applied_at', null)
+  }
   if (options.from) query = query.gte('spent_on', options.from)
   if (options.to) query = query.lte('spent_on', options.to)
   if (options.search) query = query.ilike('note', `%${options.search}%`)
@@ -195,6 +211,7 @@ export type RecurringRule = {
   end_date: string | null
   active: boolean
   last_generated_on: string | null
+  net_worth_item_id: string | null
   wallets: { id: string; name: string }
   categories: {
     id: string
@@ -210,13 +227,54 @@ export async function getRecurringRules(): Promise<RecurringRule[]> {
     .from('recurring_rules')
     .select(
       `id, wallet_id, amount, note, day_of_month, start_date, end_date, active,
-       last_generated_on,
+       last_generated_on, net_worth_item_id,
        wallets!inner(id, name),
        categories!inner(id, name, icon)`,
     )
     .order('active', { ascending: false })
     .order('day_of_month')
   return (data ?? []) as unknown as RecurringRule[]
+}
+
+export type NetWorthItem = {
+  id: string
+  wallet_id: string
+  kind: 'loan' | 'investment'
+  name: string
+  /** Still owed, or worth now. Typed by the user; the only number net worth
+   *  is computed from. */
+  current_amount: string
+  /** The full loan or the savings target. Optional — it only draws the bar. */
+  total_amount: string | null
+  monthly_amount: string | null
+  ends_on: string | null
+  active: boolean
+}
+
+/**
+ * Loans and investments — the only rows in this app that hold a BALANCE rather
+ * than a flow.
+ *
+ * Shared in practice: the rows live in the joint wallet (see addNetWorthItem),
+ * so both people read every one of them through the ordinary membership policy.
+ *
+ * Deliberately thin. The balance is `current_amount`, which the user types on
+ * the Net worth tab — this does not derive anything. Tagged payments
+ * (`expenses.net_worth_item_id`) are optional and shown as information only.
+ * See PROJECT.md § Net worth.
+ */
+export async function getNetWorthItems(): Promise<NetWorthItem[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('net_worth_items')
+    .select(
+      `id, wallet_id, kind, name, current_amount, total_amount, monthly_amount,
+       ends_on, active`,
+    )
+    .order('active', { ascending: false })
+    .order('kind')
+    .order('name')
+  return (data ?? []) as unknown as NetWorthItem[]
 }
 
 export type Income = {

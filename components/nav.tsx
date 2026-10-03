@@ -11,6 +11,10 @@ import { usePathname } from 'next/navigation'
  * nothing showed the actual current page. Two fixes: the current tab is now
  * genuinely marked, and Add is a CIRCLE, so it is distinguished by shape rather
  * than by the fill that selection uses.
+ *
+ * `short` is the phone label. Six tabs plus the Add circle do not fit a phone
+ * at full width, and truncation would eat the end of the longest name — so the
+ * one long label carries a deliberate short form rather than being cut.
  */
 const TABS = [
   { href: '/', label: 'Home' },
@@ -18,6 +22,7 @@ const TABS = [
   { href: '/budgets', label: 'Plan' },
   { href: '/income', label: 'Income' },
   { href: '/reports', label: 'Reports' },
+  { href: '/net-worth', label: 'Net worth', short: 'Worth' },
 ] as const
 
 function useIsActive() {
@@ -66,7 +71,7 @@ export function MobileNav() {
   return (
     <nav className="fixed inset-x-0 bottom-0 border-t border-neutral-200 bg-white/95 backdrop-blur lg:hidden dark:border-neutral-800 dark:bg-neutral-950/95">
       <div className="mx-auto flex max-w-2xl items-center justify-around gap-1 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        {TABS.slice(0, 2).map((tab) => (
+        {TABS.slice(0, 3).map((tab) => (
           <Tab key={tab.href} {...tab} active={isActive(tab.href)} />
         ))}
 
@@ -79,7 +84,7 @@ export function MobileNav() {
           +
         </Link>
 
-        {TABS.slice(2).map((tab) => (
+        {TABS.slice(3).map((tab) => (
           <Tab key={tab.href} {...tab} active={isActive(tab.href)} />
         ))}
       </div>
@@ -90,10 +95,13 @@ export function MobileNav() {
 function Tab({
   href,
   label,
+  short,
   active,
 }: {
   href: string
   label: string
+  /** Used in place of `label` on phones, where the bar is width-bound. */
+  short?: string
   active: boolean
 }) {
   return (
@@ -105,8 +113,9 @@ function Tab({
           ? 'font-semibold text-neutral-900 dark:text-white'
           : 'text-neutral-500'
       }`}
+      aria-label={short ? label : undefined}
     >
-      {label}
+      {short ?? label}
       {/* A dot rather than a fill: selection and the Add accent must not look
           the same. */}
       <span

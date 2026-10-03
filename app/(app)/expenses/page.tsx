@@ -3,12 +3,14 @@ import {
   getActivePeriod,
   getCategories,
   getExpenses,
+  getNetWorthItems,
   getWallets,
   type ExpenseRow,
 } from '@/lib/queries'
 import { formatEur, sumCents, toCents } from '@/lib/money'
 import { ConfirmDelete } from '@/components/confirm-delete'
 import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
+import { TOWARDS_WHAT_LABEL, TowardsWhat } from '@/components/towards-what'
 
 /**
  * The searchable log. Filters are plain GET parameters so a filtered view is a
@@ -27,12 +29,14 @@ export default async function ExpensesPage({
    * searching. "Where did that petrol charge go?" is a question about all of
    * history, and scoping it to the month on screen would answer "nowhere" for
    * anything outside it, which reads as data loss rather than as a filter.
+   *
    */
   const searching = Boolean(params.q)
 
-  const [wallets, categories, expenses] = await Promise.all([
+  const [wallets, categories, allNetWorthItems, expenses] = await Promise.all([
     getWallets(),
     getCategories(),
+    getNetWorthItems(),
     getExpenses({
       walletId: params.wallet,
       search: params.q,
@@ -40,6 +44,11 @@ export default async function ExpensesPage({
       limit: 200,
     }),
   ])
+
+  // Archived entries are not something to pay into, so they are not offered —
+  // but an expense already tagged to one keeps its tag, which is why the row
+  // below falls back to the full list when it needs a name.
+  const netWorthItems = allNetWorthItems.filter((item) => item.active)
 
   const spendCents = sumCents(expenses)
   const recurringCents = sumCents(expenses.filter((e) => e.recurring_rule_id))
@@ -157,6 +166,18 @@ export default async function ExpensesPage({
                         <p className="truncate text-xs text-neutral-500">
                           {expense.wallets.name}
                           {expense.note ? ` · ${expense.note}` : ''}
+                          {/* What this payment moved. Shown on the row, not
+                              only inside the dialog, so an untagged loan
+                              payment is visible without opening anything. */}
+                          {expense.net_worth_item_id && (
+                            <span className="text-neutral-400">
+                              {' '}
+                              · →{' '}
+                              {allNetWorthItems.find(
+                                (item) => item.id === expense.net_worth_item_id,
+                              )?.name ?? 'a closed entry'}
+                            </span>
+                          )}
                         </p>
                       </div>
                       <span className="tabular-nums text-sm font-medium">
@@ -223,6 +244,23 @@ export default async function ExpensesPage({
                             className={fieldClass}
                           />
                         </Field>
+                        {/* The field that makes a balance move. It lives here
+                            rather than on the loan itself: the payment is the
+                            thing that knows what it paid. */}
+                        {netWorthItems.length > 0 && (
+                          <Field label={TOWARDS_WHAT_LABEL}>
+                            <TowardsWhat
+                              items={netWorthItems}
+                              defaultValue={expense.net_worth_item_id}
+                              className={fieldClass}
+                            />
+                            <span className="mt-1 block text-xs text-neutral-500">
+                              Optional. Net worth offers it as a payment to
+                              apply to that balance — nothing moves until you
+                              press Apply there.
+                            </span>
+                          </Field>
+                        )}
                       </EditDialog>
                       <ConfirmDelete
                         action={deleteExpense}

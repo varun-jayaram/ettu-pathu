@@ -2,8 +2,9 @@
 
 import { useActionState } from 'react'
 import { addRecurringRule, type FormState } from '@/app/(app)/actions'
-import type { Category } from '@/lib/queries'
+import type { Category, NetWorthItem } from '@/lib/queries'
 import { DateField } from '@/components/date-field'
+import { TOWARDS_WHAT_LABEL, TowardsWhat } from '@/components/towards-what'
 
 /**
  * Create a recurring rule — how a fixed monthly cost fills itself in instead of
@@ -12,8 +13,12 @@ import { DateField } from '@/components/date-field'
 export function RecurringForm({
   categories,
   walletId,
+  netWorthItems,
 }: {
   categories: Category[]
+  /** Set once here and stamped onto every expense this rule generates, so a
+   *  monthly loan payment never needs tagging again. */
+  netWorthItems: NetWorthItem[]
   /** Always the joint wallet — recurring commitments are shared household
    *  costs, so the form does not ask. */
   walletId: string
@@ -80,6 +85,21 @@ export function RecurringForm({
         ))}
       </select>
 
+
+      {netWorthItems.length > 0 && (
+        <>
+          <label className="mt-4 block text-sm font-medium" htmlFor="rec-towards">
+            {TOWARDS_WHAT_LABEL}{' '}
+            <span className="font-normal text-neutral-500">(optional)</span>
+          </label>
+          <TowardsWhat id="rec-towards" items={netWorthItems} className={field} />
+          <p className="mt-1 text-xs text-neutral-500">
+            Set it here and every expense this rule creates arrives tagged, so a
+            monthly loan payment is waiting on Net worth each month for one
+            press of Apply.
+          </p>
+        </>
+      )}
 
       <div className="mt-4">
         <DateField name="start_date" label="Starting from" />

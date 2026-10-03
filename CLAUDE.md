@@ -33,9 +33,10 @@ Environment — copy `.env.example` to `.env.local`:
 
 ```
 wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy design
-         ├─ expenses ──────── categories
-         ├─ recurring_rules ─ categories
-         └─ budgets ───────── categories | (whole wallet)
+         ├─ expenses ──────── categories, net_worth_items?  (? = optional tag)
+         ├─ recurring_rules ─ categories, net_worth_items?
+         ├─ budgets ───────── categories | (whole wallet)
+         └─ net_worth_items   ← a typed balance; derives nothing
 ```
 
 - **Three wallets, two logins**: Varun / Shriya / Joint. Personal wallets have one
@@ -51,6 +52,23 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
   cycle is *named for* (the month it ends in). A new month starts with **no
   budgets** — nothing is copied forward (`0017`), because recurring already
   repeats itself and a budget is a per-month decision.
+- **Net worth holds the only balances, and they are TYPED.**
+  `net_worth_items.current_amount` — still owed, or worth now — is edited in a
+  box on the tab, and net worth is those numbers added up. Nothing is derived.
+  `total_amount` and `monthly_amount` are optional decoration (a progress bar,
+  and a figure to display). `0018` inferred the balance from a category and
+  `0019` from tagged payments; **both were replaced** — see PROJECT.md for why,
+  the short version being that an investment's value moves with the market and
+  no sum of contributions can say so.
+- **"Towards what" makes a payment pending; Apply folds it in.**
+  `expenses.net_worth_item_id`, set on Add, in the Log, or once on a recurring
+  rule (which stamps it onto the rows it generates). Net worth shows
+  "1.300,00 € tagged, not yet applied · Apply → …", and the balance moves only
+  on that press — writing into the same field you can type, which still wins.
+  `expenses.balance_applied_at` is what stops a second press double-counting;
+  pending ignores the pay cycle, and so does the whole tab. No automatic
+  reversal if a payment is edited after applying. An untagged payment is never
+  warned about. Shared like income: rows sit in the joint wallet.
 - **The month is app-wide**, in the header, held in a cookie and read by every
   tab via `getActivePeriod()`. Off the live cycle it goes amber with a Today
   escape. Log follows it except while searching, which spans all cycles.
@@ -64,11 +82,11 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
 
 | Path | What lives there |
 |---|---|
-| `app/(app)/` | Authenticated pages — dashboard, add, expenses, reports, settings |
+| `app/(app)/` | Authenticated pages — dashboard, add, expenses, reports, net-worth, settings |
 | `app/login/` | The only unauthenticated route. There is no signup route, by design |
 | `lib/supabase/` | `client.ts` (browser), `server.ts` (RSC + actions), `proxy.ts` (session refresh) |
 | `proxy.ts` | Session refresh + route protection. **Next 16 renamed Middleware → Proxy** |
-| `supabase/migrations/` | `0001_init` · `0002_rls` · `0003_seed` · `0004_recurring` · `0007` income+cycles · `0011` drops group `kind` · `0014` drops groups entirely · `0015` monthly budgets + adjustable cycle dates · `0017` no budget carry-forward |
+| `supabase/migrations/` | `0001_init` · `0002_rls` · `0003_seed` · `0004_recurring` · `0007` income+cycles · `0011` drops group `kind` · `0014` drops groups entirely · `0015` monthly budgets + adjustable cycle dates · `0017` no budget carry-forward · `0018` net worth · `0019` the expense names its loan · `0020` the balance is typed · `0021` tagged payments wait for Apply |
 
 ## Conventions
 

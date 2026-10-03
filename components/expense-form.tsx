@@ -2,8 +2,9 @@
 
 import { useActionState } from 'react'
 import { addExpense, type FormState } from '@/app/(app)/actions'
-import type { Category, Wallet } from '@/lib/queries'
+import type { Category, NetWorthItem, Wallet } from '@/lib/queries'
 import { DateField } from '@/components/date-field'
+import { TOWARDS_WHAT_LABEL, TowardsWhat } from '@/components/towards-what'
 
 /**
  * Quick-add — the primary daily action, so it is built for one-handed phone
@@ -14,9 +15,12 @@ import { DateField } from '@/components/date-field'
 export function ExpenseForm({
   wallets,
   categories,
+  netWorthItems,
 }: {
   wallets: Wallet[]
   categories: Category[]
+  /** Active loans and investments, so a payment can say what it pays off. */
+  netWorthItems: NetWorthItem[]
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     addExpense,
@@ -84,6 +88,24 @@ export function ExpenseForm({
           </option>
         ))}
       </select>
+
+      {netWorthItems.length > 0 && (
+        <>
+          <label className="mt-4 block text-sm font-medium" htmlFor="net_worth_item_id">
+            {TOWARDS_WHAT_LABEL}{' '}
+            <span className="font-normal text-neutral-500">(optional)</span>
+          </label>
+          <TowardsWhat
+            id="net_worth_item_id"
+            items={netWorthItems}
+            className={field}
+          />
+          <p className="mt-1 text-xs text-neutral-500">
+            Only if this pays off a loan or goes into an investment. Net worth
+            will offer it there as a payment to apply to that balance.
+          </p>
+        </>
+      )}
 
       <div className="mt-4">
         <DateField name="spent_on" />

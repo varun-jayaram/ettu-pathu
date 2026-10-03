@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node tests/period.test.mjs"
+    "test": "node tests/period.test.mjs && node tests/net-worth.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

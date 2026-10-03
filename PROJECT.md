@@ -408,6 +408,116 @@ budget-vs-actual is out of scope for v1 and is additive later.
 
 ---
 
+## Net worth: loans and investments
+
+Every other screen answers *what moved?*. Net worth answers *where does that
+leave us?* — it is the only place in the app that holds a **balance** rather
+than a flow.
+
+An entry is a loan or an investment with one number that matters:
+**`current_amount`** — still owed, or worth now. It is **typed**, edited in a
+box beside the entry (or folded in from tagged payments by the Apply button
+below), and net worth is simply those numbers added up:
+
+```
+net worth = sum(investments.current_amount) − sum(loans.current_amount)
+```
+
+`total_amount` (the full loan, or a savings target) and `monthly_amount` are
+optional and decorative: the first draws a progress bar, the second is displayed.
+Nothing is computed from either.
+
+### Two derivations were tried first, and both were wrong
+
+This is the part worth remembering, because the instinct to derive is strong and
+it was wrong twice.
+
+| | How the balance was found | Why it failed |
+|---|---|---|
+| **0018** | infer it from an expense's **category** | Two loans paid out of Loans / EMI give a category total that cannot be split. The page showed a figure and then explained in amber that it did not know whose it was. |
+| **0019** | sum the payments **tagged** to the entry | Exact, but only true once every payment had been tagged. The page filled up with warnings about its own inputs — "2.250,00 € is not assigned to anything yet" — and the user's verdict was "it's too confusing". |
+
+**The common failure was the same both times: the number was a reward for
+feeding the machine.** A household knows what it owes. Asking it to prove that
+through bookkeeping, and nagging it when the bookkeeping was incomplete, is more
+work than the number is worth.
+
+**An investment settles the argument on its own.** Its value moves with the
+market. No sum of contributions can ever express that a fund you paid 5.000 into
+is now worth 5.400 — so for half the tab, a derivation is not merely
+inconvenient, it is incapable of being right. Typing it is the only correct
+answer, and once typing is right for investments it is right for loans too.
+
+So `0020` made the balance a plain editable number, in a box on the tab itself.
+Updating it is one keystroke and a Save, which is the *entire* interaction the
+feature needs.
+
+### Tagging makes a payment pending; Apply folds it in
+
+`0020` left "Towards what" purely informational, and that went one step too far.
+A 1.000 € payment was logged, tagged to the car loan, and the balance did not
+move — correct by the rules, surprising in practice. The user wants to own the
+number without doing the arithmetic.
+
+So a tagged payment is **pending** until applied. The row reads
+*"1.300,00 € tagged, not yet applied · Apply → 6.400,50 €"*, and one press folds
+it into the balance — down for a loan, up for an investment.
+
+**The typed field is untouched by this.** It is still editable at any time and
+still wins; Apply writes into that same field. What it removes is the
+subtraction, not the control. An automatic version was offered and declined, for
+exactly that reason.
+
+**Pending is remembered per payment, not recomputed.** `expenses.balance_applied_at`
+records the fact, which is what stops a second press — or simply loading the page
+next month — subtracting the same 1.300 € again. Without it every tag would look
+pending forever.
+
+**Pending ignores the pay cycle**, unlike everything else on every other tab. A
+payment tagged in September and never applied is still waiting in October;
+scoping it to the month on screen would make money evaporate when the month
+turned over. This is also why the whole tab ignores the header month: a balance
+is a position, not a flow.
+
+**There is no automatic reversal.** Deleting or editing a payment *after* it has
+been applied does not rewind the balance — that needs a reversing ledger, which
+is the machinery this feature has twice been simplified away from. The typed
+field is the escape hatch, and the UI says so rather than leaving it to be
+found.
+
+**An untagged payment is still never reported.** It is not a problem to surface;
+it is a payment somebody did not tag. Every warning about unassigned money went
+with `0020`, along with the Log's `?untagged=` filter that existed only to serve
+them.
+
+### Shared, and the same on both phones
+
+The user's choice was **shared**: both people see every loan and investment.
+Implemented exactly like `income` — the row carries a `wallet_id` with the
+ordinary four `is_wallet_member()` policies, and the server action resolves the
+**joint** wallet itself. No new `SECURITY DEFINER` function was added.
+
+Because the balance is typed rather than summed from private rows, the two
+logins cannot disagree about it by construction — the earlier designs needed a
+joint-wallet-only rule to guarantee that. The tagged-this-cycle line still reads
+joint-wallet expenses only, for the same reason `0007` gave for `pay_anchors`.
+
+### Progress, where there is something to measure
+
+A bar is drawn only when `total_amount` was given — paid off against the full
+loan, or value against the target. With no target there is **no bar at all**,
+only the figure: a full bar would claim a goal was met and an empty one reads as
+"nothing in" beside a label saying 5.400,00 €.
+
+Two amber lines survive, because they are the only things the user cannot have
+meant: a loan **past its end date** still showing a balance, and a loan pushed
+**below zero** by applying more than was owed. Both suggest the fix. Applying is
+deliberately not clamped at zero — a tidy zero would swallow a wrong tag or a
+wrong figure. Everything else on this tab is a number somebody typed on purpose,
+so there is nothing to correct them about.
+
+---
+
 ## Recurring expenses: why lazy, not cron
 
 Rules are materialised into real `expenses` rows by `materialize_recurring()`,

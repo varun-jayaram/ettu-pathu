@@ -11,6 +11,7 @@ import {
   getBudgets,
   getCategories,
   getExpenses,
+  getNetWorthItems,
   getRecurringRules,
   getWallets,
 } from '@/lib/queries'
@@ -19,6 +20,7 @@ import { BudgetBar } from '@/components/budget-bar'
 import { RecurringForm } from '@/components/recurring-form'
 import { ConfirmDelete } from '@/components/confirm-delete'
 import { EditDialog, Field, fieldClass } from '@/components/edit-dialog'
+import { TOWARDS_WHAT_LABEL, TowardsWhat } from '@/components/towards-what'
 import {
   nextOccurrence,
   todayIso,
@@ -67,13 +69,17 @@ export default async function PlanPage({
   // A month starts with NO budgets and full recurring — 0017. Recurring
   // carries itself; a budget is a decision about one month, and pre-filling it
   // from last month asserts a decision nobody made.
-  const [wallets, categories, budgets, expenses, rules] = await Promise.all([
-    getWallets(),
-    getCategories(),
-    getBudgets(month),
-    getExpenses({ from, to, limit: 1000 }),
-    getRecurringRules(),
-  ])
+  const [wallets, categories, budgets, expenses, rules, netWorthEntries] =
+    await Promise.all([
+      getWallets(),
+      getCategories(),
+      getBudgets(month),
+      getExpenses({ from, to, limit: 1000 }),
+      getRecurringRules(),
+      getNetWorthItems(),
+    ])
+
+  const netWorthItems = netWorthEntries.filter((item) => item.active)
 
 
   // Default to Joint: it holds the shared costs and is the only wallet that
@@ -490,6 +496,19 @@ export default async function PlanPage({
                         className={fieldClass}
                       />
                     </Field>
+                    {netWorthItems.length > 0 && (
+                      <Field label={TOWARDS_WHAT_LABEL}>
+                        <TowardsWhat
+                          items={netWorthItems}
+                          defaultValue={rule.net_worth_item_id}
+                          className={fieldClass}
+                        />
+                        <span className="mt-1 block text-xs text-neutral-500">
+                          Changing this re-tags the expenses this rule has
+                          already created, not just future ones.
+                        </span>
+                      </Field>
+                    )}
                   </EditDialog>
 
                   <form action={toggleRecurringRule}>
@@ -520,7 +539,11 @@ export default async function PlanPage({
               Add a recurring expense
             </summary>
             <div className="mt-3">
-              <RecurringForm categories={categories} walletId={selected!.id} />
+              <RecurringForm
+                categories={categories}
+                walletId={selected!.id}
+                netWorthItems={netWorthItems}
+              />
             </div>
           </details>
         </section>

@@ -25,6 +25,9 @@ export async function addExpense(
   const rawAmount = String(formData.get('amount') ?? '').replace(',', '.')
   const spentOn = String(formData.get('spent_on') ?? '')
   const note = String(formData.get('note') ?? '').trim()
+  // "Towards what" — which loan or investment this payment moves, if any.
+  // Optional: most spending moves no balance at all.
+  const netWorthItemId = String(formData.get('net_worth_item_id') ?? '')
 
   if (!walletId || !categoryId) return { error: 'Pick a wallet and a category.' }
 
@@ -49,6 +52,7 @@ export async function addExpense(
     amount: amount.toFixed(2),
     spent_on: spentOn,
     note: note || null,
+    net_worth_item_id: netWorthItemId || null,
     created_by: user?.id ?? null,
   })
 
@@ -80,6 +84,7 @@ export async function updateExpense(formData: FormData): Promise<void> {
   const walletId = String(formData.get('wallet_id') ?? '')
   const spentOn = String(formData.get('spent_on') ?? '')
   const note = String(formData.get('note') ?? '').trim()
+  const netWorthItemId = String(formData.get('net_worth_item_id') ?? '')
 
   if (!id || amount === null || !categoryId || !walletId || !spentOn) return
 
@@ -95,12 +100,14 @@ export async function updateExpense(formData: FormData): Promise<void> {
       wallet_id: walletId,
       spent_on: spentOn,
       note: note || null,
+      net_worth_item_id: netWorthItemId || null,
     })
     .eq('id', id)
 
   revalidatePath('/')
   revalidatePath('/expenses')
   revalidatePath('/reports')
+  revalidatePath('/net-worth')
 }
 
 export async function updateIncome(formData: FormData): Promise<void> {
@@ -142,6 +149,7 @@ export async function updateRecurringRule(formData: FormData): Promise<void> {
   const dayOfMonth = Number(String(formData.get('day_of_month') ?? ''))
   const startDate = String(formData.get('start_date') ?? '')
   const note = String(formData.get('note') ?? '').trim()
+  const netWorthItemId = String(formData.get('net_worth_item_id') ?? '')
 
   if (!id || amount === null || !categoryId || !startDate) return
   if (!Number.isInteger(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) return
@@ -170,15 +178,31 @@ export async function updateRecurringRule(formData: FormData): Promise<void> {
       day_of_month: dayOfMonth,
       start_date: startDate,
       note: note || null,
+      net_worth_item_id: netWorthItemId || null,
       last_generated_on: null,
     })
     .eq('id', id)
+
+  /**
+   * Retagging a rule retags the expenses it already made.
+   *
+   * materialize_recurring() stamps the tag only at creation, so without this
+   * the fix would apply to next month and leave every past payment untagged —
+   * the balance would be wrong in exactly the way the user had just corrected.
+   * Only rows this rule generated are touched; a hand-logged payment keeps
+   * whatever it was given.
+   */
+  await supabase
+    .from('expenses')
+    .update({ net_worth_item_id: netWorthItemId || null })
+    .eq('recurring_rule_id', id)
 
   await supabase.rpc('materialize_recurring')
 
   revalidatePath('/')
   revalidatePath('/budgets')
   revalidatePath('/expenses')
+  revalidatePath('/net-worth')
 }
 
 /**
@@ -456,6 +480,7 @@ export async function addRecurringRule(
   const dayOfMonth = Number(String(formData.get('day_of_month') ?? ''))
   const startDate = String(formData.get('start_date') ?? '')
   const note = String(formData.get('note') ?? '').trim()
+  const netWorthItemId = String(formData.get('net_worth_item_id') ?? '')
 
   if (!walletId || !categoryId) return { error: 'Pick a wallet and a category.' }
 
@@ -476,6 +501,7 @@ export async function addRecurringRule(
     day_of_month: dayOfMonth,
     start_date: startDate,
     note: note || null,
+    net_worth_item_id: netWorthItemId || null,
   })
 
   if (error) {
@@ -494,6 +520,7 @@ export async function addRecurringRule(
   revalidatePath('/')
   revalidatePath('/recurring')
   revalidatePath('/expenses')
+  revalidatePath('/net-worth')
   redirect('/recurring?added=1')
 }
 
@@ -511,6 +538,261 @@ export async function toggleRecurringRule(formData: FormData): Promise<void> {
 
   revalidatePath('/')
   revalidatePath('/recurring')
+}
+
+// ---------------------------------------------------------------------------
+// Net worth — loans and investments
+// ---------------------------------------------------------------------------
+// These rows hold a balance; nothing here records a payment. The monthly
+// movement is derived from `expenses` by lib/net-worth.ts, because a loan
+// payment is already an expense — storing it twice would let the two copies
+// drift. See PROJECT.md § Net worth.
+
+type NetWorthValues = {
+  kind: string
+  name: string
+  current_amount: string
+  total_amount: string | null
+  monthly_amount: string | null
+  ends_on: string | null
+}
+
+/** The fields shared by add and edit, validated once. */
+function readNetWorthFields(
+  formData: FormData,
+): { error: string } | { values: NetWorthValues } {
+  const kind = String(formData.get('kind') ?? '')
+  const name = String(formData.get('name') ?? '').trim()
+  const endsOn = String(formData.get('ends_on') ?? '').trim()
+
+  if (kind !== 'loan' && kind !== 'investment') {
+    return { error: 'Pick a loan or an investment.' }
+  }
+  if (!name) return { error: 'Give it a name — "Car loan", "Index fund".' }
+
+  // The balance. Zero is a real answer — a loan you have just cleared — so this
+  // is read directly rather than through parseAmount(), which treats 0 as
+  // "nothing entered" because every other amount in this app must be positive.
+  const rawCurrent = String(formData.get('current_amount') ?? '')
+    .replace(',', '.')
+    .trim()
+  const current = Number(rawCurrent)
+  if (rawCurrent === '' || !Number.isFinite(current) || current < 0) {
+    return {
+      error:
+        kind === 'loan'
+          ? 'Enter how much is still owed. Zero is fine if it is paid off.'
+          : 'Enter what it is worth now.',
+    }
+  }
+
+  // Optional for both: it only draws the progress bar.
+  const total = parseAmount(formData.get('total_amount'))
+  const monthly = parseAmount(formData.get('monthly_amount'))
+
+  return {
+    values: {
+      kind,
+      name,
+      current_amount: current.toFixed(2),
+      total_amount: total === null ? null : total.toFixed(2),
+      monthly_amount: monthly === null ? null : monthly.toFixed(2),
+      ends_on: endsOn || null,
+    },
+  }
+}
+
+/**
+ * Sets just the balance, from the box beside it on the Net worth tab.
+ *
+ * Its own action because this is the one thing that gets updated often — a
+ * fund's value moves every month — and making the user open a dialog to change
+ * one number is exactly the friction they asked to be rid of. Zero is allowed
+ * and meaningful: a loan that has been cleared.
+ */
+export async function setNetWorthBalance(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  const raw = String(formData.get('current_amount') ?? '').replace(',', '.').trim()
+  const amount = Number(raw)
+
+  if (!id || raw === '' || !Number.isFinite(amount) || amount < 0) return
+
+  const supabase = await createClient()
+  await supabase
+    .from('net_worth_items')
+    .update({ current_amount: amount.toFixed(2) })
+    .eq('id', id)
+
+  revalidatePath('/net-worth')
+  revalidatePath('/')
+}
+
+/**
+ * Adds a loan or an investment.
+ *
+ * Lands in the JOINT wallet, resolved server-side exactly as addIncome does —
+ * the user asked for these to be shared, and resolving it here means the client
+ * cannot put one anywhere else. The derived balance then reads joint-wallet
+ * expenses only, so both phones compute the same number; see the 0018 header.
+ */
+export async function addNetWorthItem(
+  _previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = readNetWorthFields(formData)
+  if ('error' in parsed) return { error: parsed.error }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const { data: joint } = await supabase
+    .from('wallets')
+    .select('id')
+    .eq('kind', 'joint')
+    .maybeSingle()
+
+  if (!joint) return { error: 'No joint wallet found.' }
+
+  const { error } = await supabase.from('net_worth_items').insert({
+    wallet_id: joint.id,
+    ...parsed.values,
+    created_by: user?.id ?? null,
+  })
+
+  if (error) {
+    return {
+      error:
+        error.code === '42501'
+          ? 'That wallet is not yours.'
+          : `Could not save: ${error.message}`,
+    }
+  }
+
+  revalidatePath('/net-worth')
+  revalidatePath('/')
+  redirect('/net-worth?added=1')
+}
+
+/**
+ * Folds every payment tagged to one entry into its balance, and marks those
+ * payments applied.
+ *
+ * On a button, never automatically: the balance is the user's own number, and
+ * one that moved by itself whenever something was tagged would be the surprise
+ * this whole feature keeps being simplified away from. What Apply removes is
+ * the arithmetic, not the control.
+ *
+ * ORDER MATTERS. The balance is written FIRST, then the payments are stamped.
+ * A failure between the two leaves them pending, so Apply is simply offered
+ * again — recoverable. Stamping first would lose them silently on the same
+ * failure, and nothing would ever say so.
+ */
+export async function applyNetWorthPayments(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
+
+  const supabase = await createClient()
+
+  // RLS scopes both reads: an entry in a wallet this user is not a member of
+  // comes back empty, and so do its payments.
+  const [{ data: item }, { data: pending }] = await Promise.all([
+    supabase
+      .from('net_worth_items')
+      .select('id, kind, current_amount')
+      .eq('id', id)
+      .maybeSingle(),
+    supabase
+      .from('expenses')
+      .select('id, amount')
+      .eq('net_worth_item_id', id)
+      .is('balance_applied_at', null),
+  ])
+
+  if (!item || !pending || pending.length === 0) return
+
+  // Integer cents throughout — PROJECT.md § Money. Summing euros as floats here
+  // would put a rounding error straight into a stored balance.
+  const pendingCentsTotal = pending.reduce(
+    (total, row) => total + Math.round(Number(row.amount) * 100),
+    0,
+  )
+  const currentCents = Math.round(Number(item.current_amount) * 100)
+  const next =
+    item.kind === 'loan'
+      ? currentCents - pendingCentsTotal
+      : currentCents + pendingCentsTotal
+
+  const { error } = await supabase
+    .from('net_worth_items')
+    .update({ current_amount: (next / 100).toFixed(2) })
+    .eq('id', id)
+
+  if (error) return
+
+  await supabase
+    .from('expenses')
+    .update({ balance_applied_at: new Date().toISOString() })
+    .in(
+      'id',
+      pending.map((row) => row.id),
+    )
+
+  revalidatePath('/net-worth')
+  revalidatePath('/')
+}
+
+/**
+ * Edits one — everything at once, for the occasional correction.
+ *
+ * The balance alone has its own action above, because that is the field that
+ * actually changes month to month.
+ */
+export async function updateNetWorthItem(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  const parsed = readNetWorthFields(formData)
+  if (!id || 'error' in parsed) return
+
+  const supabase = await createClient()
+  await supabase.from('net_worth_items').update(parsed.values).eq('id', id)
+
+  revalidatePath('/net-worth')
+  revalidatePath('/')
+}
+
+/**
+ * Archives or reactivates one. Never deletes — the same rule as recurring
+ * rules, and archiving keeps the item's rule occurrences attributed to it so a
+ * neighbour sharing the category does not suddenly absorb them.
+ */
+export async function toggleNetWorthItem(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  const active = String(formData.get('active') ?? '') === 'true'
+  if (!id) return
+
+  const supabase = await createClient()
+  await supabase.from('net_worth_items').update({ active: !active }).eq('id', id)
+
+  revalidatePath('/net-worth')
+  revalidatePath('/')
+}
+
+/**
+ * Deletes one outright, for something entered by mistake.
+ *
+ * No expense is touched: an item has never owned a row, it only reads them, so
+ * the log and every total are unaffected.
+ */
+export async function deleteNetWorthItem(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
+
+  const supabase = await createClient()
+  await supabase.from('net_worth_items').delete().eq('id', id)
+
+  revalidatePath('/net-worth')
+  revalidatePath('/')
 }
 
 /**

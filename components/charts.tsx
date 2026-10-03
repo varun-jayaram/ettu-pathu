@@ -13,6 +13,11 @@ import { formatEur } from '@/lib/money'
  * Dark values are declared under both the media query and the [data-theme]
  * scope, so an explicit theme choice wins in either direction.
  *
+ * `--viz-alert` is the status step, reserved for a figure that contradicts
+ * itself (a loan paid past its principal, one still owing after its end date).
+ * It is never used as "series 3", and it never appears without words saying
+ * what is wrong.
+ *
  * Every chart here also ships visible direct labels and, where the numbers
  * matter, a table — identity and value are never carried by colour alone.
  */
@@ -24,6 +29,7 @@ export function VizStyles() {
         --viz-series-2: #eb6834;
         --viz-track:    #e1e0d9;
         --viz-muted:    #898781;
+        --viz-alert:    #b45309;
       }
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme="light"]) .viz {
@@ -31,12 +37,14 @@ export function VizStyles() {
           --viz-series-2: #d95926;
           --viz-track:    #2c2c2a;
           --viz-muted:    #898781;
+          --viz-alert:    #f59e0b;
         }
       }
       :root[data-theme="dark"] .viz {
         --viz-series-1: #3987e5;
         --viz-series-2: #d95926;
         --viz-track:    #2c2c2a;
+        --viz-alert:    #f59e0b;
       }
     `}</style>
   )
@@ -544,4 +552,92 @@ function shortDay(value: string) {
     month: 'short',
     timeZone: 'UTC',
   })
+}
+
+
+/**
+ * A meter: one magnitude against the target it is measured by.
+ *
+ * Not a chart — the data-viz form heuristic sends a single value with a
+ * reference to a meter, and a meter's job here is "how much of this loan is
+ * paid" or "how much has gone into this fund". Per the meter spec the unfilled
+ * track is a lighter step of the FILL's own hue, computed with color-mix so
+ * there is no second colour to validate, which lets the state read across the
+ * whole bar rather than only across the filled part.
+ *
+ * `tone` follows the entity, never its rank or its position in a list:
+ *
+ *   liability  a loan — the orange pole
+ *   asset      an investment — the blue pole
+ *   alert      the reserved status step, for a figure that contradicts itself
+ *
+ * Each section on Net worth holds one tone, and its heading names it, so there
+ * is no legend box to restate — but the value is always direct-labelled in text
+ * tokens, so nothing here is carried by colour alone.
+ *
+ * No target (an open-ended monthly investment) means NO BAR AT ALL, only the
+ * figure. A full bar would claim a goal was met and an empty one reads as
+ * "nothing in" directly beside a label saying 2.250,00 € — both are a meter
+ * answering a question nobody asked.
+ */
+export function ProgressMeter({
+  label,
+  paidCents,
+  totalCents,
+  tone,
+  valueText,
+  hint,
+}: {
+  label: ReactNode
+  paidCents: number
+  /** The principal or target. Null when there is none to measure against. */
+  totalCents: number | null
+  tone: 'asset' | 'liability' | 'alert'
+  /** The direct label. Always rendered — never only in a tooltip. */
+  valueText: string
+  hint?: ReactNode
+}) {
+  const measurable = totalCents !== null && totalCents > 0
+  const percent = measurable
+    ? Math.min(Math.max((paidCents / totalCents!) * 100, 0), 100)
+    : 0
+
+  const fill = {
+    asset: 'var(--viz-series-1)',
+    liability: 'var(--viz-series-2)',
+    alert: 'var(--viz-alert)',
+  }[tone]
+
+  return (
+    <div className="viz">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="min-w-0 truncate text-sm font-medium">{label}</span>
+        {/* Text tokens, not the mark's colour — a hue that reads as a bar is
+            not legible as type. */}
+        <span className="shrink-0 tabular-nums text-xs text-neutral-500">
+          {valueText}
+        </span>
+      </div>
+
+      {measurable && (
+        <div
+          className="mt-1.5 h-2 w-full overflow-hidden rounded-sm"
+          style={{ background: `color-mix(in oklab, ${fill} 16%, transparent)` }}
+          role="progressbar"
+          aria-valuenow={Math.round(percent)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={valueText}
+        >
+          {/* Square at the baseline, 4px rounded at the data end. */}
+          <div
+            className="h-full rounded-r-[4px]"
+            style={{ width: `${percent}%`, background: fill }}
+          />
+        </div>
+      )}
+
+      {hint && <p className="mt-1 text-xs text-neutral-500">{hint}</p>}
+    </div>
+  )
 }
