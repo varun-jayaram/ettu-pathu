@@ -1,6 +1,7 @@
 import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import type { RecipeType } from '@/lib/recipes'
 import {
   addDays,
   getPeriod,
@@ -275,6 +276,53 @@ export async function getNetWorthItems(): Promise<NetWorthItem[]> {
     .order('kind')
     .order('name')
   return (data ?? []) as unknown as NetWorthItem[]
+}
+
+export type Recipe = {
+  id: string
+  title: string
+  /** One ingredient per line. */
+  ingredients: string | null
+  method: string | null
+  recipe_type: RecipeType
+  active: boolean
+}
+
+/** Recipes, shared through the joint wallet. Archived ones are returned too —
+ *  a past week must still resolve their names. */
+export async function getRecipes(): Promise<Recipe[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('recipes')
+    .select('id, title, ingredients, method, recipe_type, active')
+    .order('active', { ascending: false })
+    .order('title')
+  return (data ?? []) as Recipe[]
+}
+
+export type MealSlot = 'brunch' | 'dinner'
+export type MealKind = 'recipe' | 'eating_out'
+
+export type Meal = {
+  day: string
+  slot: MealSlot
+  planned_kind: MealKind | null
+  planned_recipe_id: string | null
+  actual_kind: MealKind | null
+  actual_recipe_id: string | null
+}
+
+/** Meal rows between two dates, inclusive. An empty slot has no row. */
+export async function getMeals(from: string, to: string): Promise<Meal[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('meals')
+    .select(
+      'day, slot, planned_kind, planned_recipe_id, actual_kind, actual_recipe_id',
+    )
+    .gte('day', from)
+    .lte('day', to)
+  return (data ?? []) as Meal[]
 }
 
 export type Income = {

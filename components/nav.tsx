@@ -12,7 +12,7 @@ import { usePathname } from 'next/navigation'
  * genuinely marked, and Add is a CIRCLE, so it is distinguished by shape rather
  * than by the fill that selection uses.
  *
- * `short` is the phone label. Six tabs plus the Add circle do not fit a phone
+ * `short` is the phone label. Seven tabs plus the Add circle do not fit a phone
  * at full width, and truncation would eat the end of the longest name — so the
  * one long label carries a deliberate short form rather than being cut.
  */
@@ -23,6 +23,7 @@ const TABS = [
   { href: '/income', label: 'Income' },
   { href: '/reports', label: 'Reports' },
   { href: '/net-worth', label: 'Net worth', short: 'Worth' },
+  { href: '/meals', label: 'Meals' },
 ] as const
 
 function useIsActive() {

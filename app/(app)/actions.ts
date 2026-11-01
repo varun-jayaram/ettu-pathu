@@ -5,7 +5,8 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getPeriodForMonthKey } from '@/lib/queries'
-import { shiftMonthKey, startDateProblem } from '@/lib/period'
+import { addDays, shiftMonthKey, startDateProblem } from '@/lib/period'
+import { isRecipeType } from '@/lib/recipes'
 
 /**
  * Writes. Each of these relies on RLS to reject anything the user should not
@@ -842,6 +843,264 @@ export async function toggleCategorySavings(formData: FormData): Promise<void> {
   revalidatePath('/')
   revalidatePath('/budgets')
   revalidatePath('/reports')
+}
+
+// ---------------------------------------------------------------------------
+// Meals — recipes and the weekly plan. No money anywhere: see 0023.
+// ---------------------------------------------------------------------------
+
+type Supabase = Awaited<ReturnType<typeof createClient>>
+
+/** The joint wallet, resolved server-side so the client cannot pick another. */
+async function jointWalletId(supabase: Supabase): Promise<string | null> {
+  const { data } = await supabase
+    .from('wallets')
+    .select('id')
+    .eq('kind', 'joint')
+    .maybeSingle()
+  return data?.id ?? null
+}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
+
+function readRecipeFields(formData: FormData) {
+  const title = String(formData.get('title') ?? '').trim()
+  const ingredients = String(formData.get('ingredients') ?? '').trim()
+  const method = String(formData.get('method') ?? '').trim()
+  const recipeType = String(formData.get('recipe_type') ?? '')
+  return {
+    title,
+    ingredients: ingredients || null,
+    method: method || null,
+    recipe_type: isRecipeType(recipeType) ? recipeType : null,
+  }
+}
+
+export type RecipeFormState = {
+  error?: string
+  values?: { title: string; recipe_type: string; ingredients: string; method: string }
+} | null
+
+/**
+ * Adds a recipe. Only the title and type are required — a recipe you know by heart is
+ * still worth planning with. Lands in the JOINT wallet, like income.
+ */
+export async function addRecipe(
+  _previous: RecipeFormState,
+  formData: FormData,
+): Promise<RecipeFormState> {
+  const fields = readRecipeFields(formData)
+  // React 19 resets a form once its action settles, so every error hands the
+  // typed text back — otherwise a failed save wipes a method somebody typed out.
+  const failed = (error: string): RecipeFormState => ({
+    error,
+    values: {
+      title: String(formData.get('title') ?? ''),
+      recipe_type: String(formData.get('recipe_type') ?? ''),
+      ingredients: String(formData.get('ingredients') ?? ''),
+      method: String(formData.get('method') ?? ''),
+    },
+  })
+  if (!fields.title) return failed('Give the recipe a title.')
+  if (!fields.recipe_type) return failed('Pick a type.')
+
+  const week = String(formData.get('week') ?? '')
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const walletId = await jointWalletId(supabase)
+  if (!walletId) return failed('No joint wallet found.')
+
+  const { error } = await supabase.from('recipes').insert({
+    wallet_id: walletId,
+    ...fields,
+    created_by: user?.id ?? null,
+  })
+
+  if (error) return failed(`Could not save: ${error.message}`)
+
+  revalidatePath('/meals')
+  redirect(ISO_DAY.test(week) ? `/meals?week=${week}&added=1` : '/meals?added=1')
+}
+
+export async function updateRecipe(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  const fields = readRecipeFields(formData)
+  if (!id || !fields.title || !fields.recipe_type) return
+
+  const supabase = await createClient()
+  await supabase.from('recipes').update(fields).eq('id', id)
+
+  revalidatePath('/meals')
+}
+
+/** Archives or restores. Never deletes — past weeks name these recipes. */
+export async function toggleRecipe(formData: FormData): Promise<void> {
+  const id = String(formData.get('id') ?? '')
+  const active = String(formData.get('active') ?? '') === 'true'
+  if (!id) return
+
+  const supabase = await createClient()
+  await supabase.from('recipes').update({ active: !active }).eq('id', id)
+
+  revalidatePath('/meals')
+}
+
+/** `recipe:<uuid>` | `eating_out` | '' → the pair of columns it means. */
+function parseMealValue(
+  value: string,
+): { kind: 'recipe' | 'eating_out' | null; recipeId: string | null } | null {
+  if (value === '') return { kind: null, recipeId: null }
+  if (value === 'eating_out') return { kind: 'eating_out', recipeId: null }
+  if (value.startsWith('recipe:') && value.length > 'recipe:'.length) {
+    return { kind: 'recipe', recipeId: value.slice('recipe:'.length) }
+  }
+  return null
+}
+
+/**
+ * Sets one slot's plan or its actual.
+ *
+ * `field` picks which half of the row. For the actual, `as_planned` COPIES the
+ * planned values across rather than setting a flag, so editing the plan later
+ * cannot rewrite what happened — see 0023.
+ *
+ * Upserts on (wallet_id, day, slot) with only the half being set in the
+ * payload, so the other half is left alone. A row whose both halves end up
+ * empty is removed: an empty slot has no row.
+ */
+export async function setMeal(formData: FormData): Promise<void> {
+  const day = String(formData.get('day') ?? '')
+  const slot = String(formData.get('slot') ?? '')
+  const field = String(formData.get('field') ?? '')
+  const raw = String(formData.get('value') ?? '')
+
+  if (!ISO_DAY.test(day)) return
+  if (slot !== 'brunch' && slot !== 'dinner') return
+  if (field !== 'planned' && field !== 'actual') return
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const walletId = await jointWalletId(supabase)
+  if (!walletId) return
+
+  const { data: existing } = await supabase
+    .from('meals')
+    .select('id, planned_kind, planned_recipe_id, actual_kind, actual_recipe_id')
+    .eq('wallet_id', walletId)
+    .eq('day', day)
+    .eq('slot', slot)
+    .maybeSingle()
+
+  let next: { kind: 'recipe' | 'eating_out' | null; recipeId: string | null } | null
+  if (field === 'actual' && raw === 'as_planned') {
+    if (!existing?.planned_kind) return
+    next = { kind: existing.planned_kind, recipeId: existing.planned_recipe_id }
+  } else {
+    next = parseMealValue(raw)
+  }
+  if (!next) return
+
+  const other =
+    field === 'planned'
+      ? { kind: existing?.actual_kind ?? null }
+      : { kind: existing?.planned_kind ?? null }
+
+  if (next.kind === null && other.kind === null) {
+    if (existing) await supabase.from('meals').delete().eq('id', existing.id)
+  } else {
+    await supabase.from('meals').upsert(
+      {
+        wallet_id: walletId,
+        day,
+        slot,
+        [`${field}_kind`]: next.kind,
+        [`${field}_recipe_id`]: next.recipeId,
+        // Only on the first write, so the author is whoever started the slot.
+        ...(existing ? {} : { created_by: user?.id ?? null }),
+      },
+      { onConflict: 'wallet_id,day,slot' },
+    )
+  }
+
+  revalidatePath('/meals')
+}
+
+/**
+ * Fills this week's EMPTY planned slots from the week before.
+ *
+ * Never overwrites: a slot that already has a plan keeps it, so pressing this
+ * after planning a couple of days by hand only fills the gaps. Archived recipes
+ * are skipped — retiring one should mean it stops coming back.
+ */
+export async function copyLastWeek(formData: FormData): Promise<void> {
+  const monday = String(formData.get('week') ?? '')
+  if (!ISO_DAY.test(monday)) return
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const walletId = await jointWalletId(supabase)
+  if (!walletId) return
+
+  const previousMonday = addDays(monday, -7)
+  const sunday = addDays(monday, 6)
+
+  const [{ data: previous }, { data: current }, { data: recipes }] =
+    await Promise.all([
+      supabase
+        .from('meals')
+        .select('day, slot, planned_kind, planned_recipe_id')
+        .eq('wallet_id', walletId)
+        .gte('day', previousMonday)
+        .lt('day', monday)
+        .not('planned_kind', 'is', null),
+      supabase
+        .from('meals')
+        .select('day, slot, planned_kind')
+        .eq('wallet_id', walletId)
+        .gte('day', monday)
+        .lte('day', sunday),
+      supabase.from('recipes').select('id').eq('active', true),
+    ])
+
+  const activeRecipes = new Set((recipes ?? []).map((r) => r.id))
+  const planned = new Set(
+    (current ?? [])
+      .filter((row) => row.planned_kind !== null)
+      .map((row) => `${row.day}|${row.slot}`),
+  )
+
+  const rows = (previous ?? [])
+    .map((row) => ({ ...row, day: addDays(row.day, 7) }))
+    .filter((row) => !planned.has(`${row.day}|${row.slot}`))
+    .filter(
+      (row) =>
+        row.planned_kind !== 'recipe' ||
+        (row.planned_recipe_id && activeRecipes.has(row.planned_recipe_id)),
+    )
+    .map((row) => ({
+      wallet_id: walletId,
+      day: row.day,
+      slot: row.slot,
+      planned_kind: row.planned_kind,
+      planned_recipe_id: row.planned_recipe_id,
+      created_by: user?.id ?? null,
+    }))
+
+  if (rows.length > 0) {
+    await supabase.from('meals').upsert(rows, { onConflict: 'wallet_id,day,slot' })
+  }
+
+  revalidatePath('/meals')
 }
 
 /**

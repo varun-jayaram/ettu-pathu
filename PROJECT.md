@@ -533,6 +533,35 @@ so there is nothing to correct them about.
 
 ---
 
+## Meals: recipes and a weekly plan
+
+A tab for planning what the household eats, Monday to Sunday, brunch and
+dinner. It exists for the budget — the expensive meal is the unplanned one —
+but **it holds no money, deliberately.** No recipe carries a price and nothing
+here reads or writes an expense. A cost per recipe would be a guess that goes
+stale with every price change, and a second, competing answer to what the
+Groceries budget already says. Eating out is a *kind* of meal, not an amount;
+its cost still arrives through Add like any other expense.
+
+- **One `meals` row per (day, slot), plan and actual together.** An empty slot
+  has no row. Days from today on are planned; days before today are recorded.
+- **Only what changed needs a tap.** A past slot offers "✓ as planned", which
+  **copies** the planned columns into the actual ones. Not a boolean: a flag
+  would re-read the plan, so editing the plan later would quietly rewrite what
+  happened. "As planned" is computed (actual = planned), never stored.
+- **A recipe type is required, from a fixed list** — North Indian, South
+  Indian, International — enforced by NOT NULL + CHECK in 0023 and mirrored in
+  `lib/recipes.ts`. It groups the meal-slot dropdowns and the recipe list.
+  There is deliberately no "Other"; a fourth type needs a migration.
+- **Copy last week fills gaps only.** It never overwrites a slot that already
+  has a plan, and it skips archived recipes.
+- **The week ignores the header month.** Weeks and pay cycles never line up, so
+  the week lives in `?week=` — a page you are looking at, not an app-wide mode.
+- **Shared, like income.** Rows sit in the joint wallet. Recipes are archived,
+  never deleted; `meals` references them `on delete restrict`.
+
+---
+
 ## Recurring expenses: why lazy, not cron
 
 Rules are materialised into real `expenses` rows by `materialize_recurring()`,

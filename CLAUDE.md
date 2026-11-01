@@ -36,7 +36,9 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
          ├─ expenses ──────── categories, net_worth_items?  (? = optional tag)
          ├─ recurring_rules ─ categories, net_worth_items?
          ├─ budgets ───────── categories | (whole wallet)
-         └─ net_worth_items   ← a typed balance; derives nothing
+         ├─ net_worth_items   ← a typed balance; derives nothing
+         ├─ recipes
+         └─ meals ─────────── recipes?  (planned + actual on one row; no money)
 ```
 
 - **Three wallets, two logins**: Varun / Shriya / Joint. Personal wallets have one
@@ -80,16 +82,23 @@ wallets ─┬─ wallet_members (wallet_id, user_id)   ← the entire privacy d
   always the day before the next cycle, so gaps and overlaps cannot be
   expressed. Max 35 days, and a cycle must end inside the month it is named for.
   `pay_anchor_day` is the fallback for months nobody has set by hand.
+- **Meals has no money.** Recipes (title and type required — North Indian /
+  South Indian / International, which groups the dropdowns; ingredients one per line;
+  method) and a Monday–Sunday plan of brunch + dinner, each a recipe or Eating
+  out. Days before today record what actually happened; "✓ as planned" COPIES
+  the plan into `actual_*` rather than setting a flag, so a later plan edit
+  cannot rewrite history. The week is in `?week=`, not the header month. Shared
+  through the joint wallet. See PROJECT.md § Meals.
 
 ## Layout
 
 | Path | What lives there |
 |---|---|
-| `app/(app)/` | Authenticated pages — dashboard, add, expenses, reports, net-worth, settings |
+| `app/(app)/` | Authenticated pages — dashboard, add, expenses, reports, net-worth, meals, settings |
 | `app/login/` | The only unauthenticated route. There is no signup route, by design |
 | `lib/supabase/` | `client.ts` (browser), `server.ts` (RSC + actions), `proxy.ts` (session refresh) |
 | `proxy.ts` | Session refresh + route protection. **Next 16 renamed Middleware → Proxy** |
-| `supabase/migrations/` | `0001_init` · `0002_rls` · `0003_seed` · `0004_recurring` · `0007` income+cycles · `0011` drops group `kind` · `0014` drops groups entirely · `0015` monthly budgets + adjustable cycle dates · `0017` no budget carry-forward · `0018` net worth · `0019` the expense names its loan · `0020` the balance is typed · `0021` tagged payments wait for Apply · `0022` and can be dismissed |
+| `supabase/migrations/` | `0001_init` · `0002_rls` · `0003_seed` · `0004_recurring` · `0007` income+cycles · `0011` drops group `kind` · `0014` drops groups entirely · `0015` monthly budgets + adjustable cycle dates · `0017` no budget carry-forward · `0018` net worth · `0019` the expense names its loan · `0020` the balance is typed · `0021` tagged payments wait for Apply · `0022` and can be dismissed · `0023` recipes + meals |
 
 ## Conventions
 
